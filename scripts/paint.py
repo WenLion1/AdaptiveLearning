@@ -65,7 +65,7 @@ def paint_table(csv_path,
     plt.ylabel('Angle (0 to 400)')
     plt.title(f'{save_name}')
     plt.xlim(0, data_len)  # 设置 x 轴范围
-    plt.ylim(0, 400)  # 设置 y 轴范围
+    plt.ylim(-400, 400)  # 设置 y 轴范围
     plt.legend(loc='lower right')  # 显示图例并设置位置
     plt.grid()
 
@@ -327,22 +327,22 @@ def paint_2C_combined_figure(file_path_1,
 
 
 if __name__ == "__main__":
-    # csv_path = "../results/csv/240_rule/combine_CP_GRU_240.csv"
-    # saving_name = "combine_CP_GRU_240"
-    # saving_path = "../results/png/240_rule"
-    # paint_table(csv_path=csv_path,
-    #             save_name=saving_name,
-    #             save_path=saving_path,
-    #             trail_type="CP", )
+    csv_path = "../results/csv/sub/combine_OB_lstm_l_3_h_1024_i_10_cos.csv"
+    saving_name = "combine_OB_LSTM_l_3_h_1024_i_10_cos"
+    saving_path = "../results/png/sub/401"
+    paint_table(csv_path=csv_path,
+                save_name=saving_name,
+                save_path=saving_path,
+                trail_type="OB", )
 
-    # file_path = "../results/csv/240_rule/combine_OB_RNN_240.csv"
+    # file_path = "../results/csv/sub/401/combine_CP_LSTM_l_3_h_1024_i_1024.csv"
     # paint_2C_figure(file_path=file_path,
-    #                 csv_save_name="combine_OB_RNN_240",
-    #                 png_save_name="combine_OB_RNN_240",
-    #                 png_save_path="../results/png/240_rule/combine",
+    #                 csv_save_name="combine_CP_LSTM_l_3_h_1024_i_1024",
+    #                 png_save_name="combine_CP_LSTM_l_3_h_1024_i_1024",
+    #                 png_save_path="../results/png/sub/401",
     #                 ignore_number=20, )
-    paint_2C_combined_figure(file_path_1="../results/csv/240_rule/combine_CP_LSTM_l_3_h_256_240.csv",
-                             file_path_2="../results/csv/240_rule/combine_OB_LSTM_l_3_h_256_240.csv",
-                             png_save_path="../results/png/240_rule/combine",
-                             png_save_name="combineCP_combineOB_LSTM_l_3_h_256_240",
-                             is_nihe=1)
+    # paint_2C_combined_figure(file_path_1="../results/csv/sub/combine_CP_lstm_l_3_h_1024_i_10_cos.csv",
+    #                          file_path_2="../results/csv/sub/combine_OB_lstm_l_3_h_1024_i_10_cos.csv",
+    #                          png_save_path="../results/png/sub/combine",
+    #                          png_save_name="combineCP_combineOB_lstm_l_3_h_1024_i_10_240",
+    #                          is_nihe=0)

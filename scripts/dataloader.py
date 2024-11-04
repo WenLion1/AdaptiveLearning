@@ -4,7 +4,11 @@ import random
 import numpy as np
 import pandas as pd
 import torch
+from matplotlib import pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+
+from util.dataloader_util import draw_image
+from util.utils_deep import concatenate_transform_steps
 
 
 def get_right_angle(angle):
@@ -282,7 +286,17 @@ def generate_outcome_angle(df,
 class generate_dataset(Dataset):
     def __init__(self,
                  df,
+                 transform_steps=None,
+                 image_size=128,
+                 fill_empty_space=255,
                  sequence_length=240):
+        # if transform_steps is None:
+        #     self.transform_steps = concatenate_transform_steps(image_resize=image_size,
+        #                                                        fill_empty_space=fill_empty_space,
+        #                                                        grayscale=False,
+        #                                                        )
+        # else:
+        #     self.transform_steps = transform_steps
         self.df = df
         self.dist_mean = self.df['distMean'].values.astype(float)
         self.outcome = self.df['outcome'].values.astype(float)
@@ -307,7 +321,18 @@ class generate_dataset(Dataset):
             is_oddball = self.is_oddball[start_index:end_index]
             rule = self.rule[start_index:end_index]  # 提取rule列
 
-            return distMean, outcome, is_oddball, rule  # 返回rule
+            # # 将outcome列的值转换为图片
+            # images = []
+            # for angle in outcome:
+            #     image = draw_image(angle)
+            #     image = self.transform_steps(image)
+            #     # 将图片添加到列表中
+            #     images.append(image)
+            #
+            # images = torch.stack(images, dim=0)
+
+            # 返回图片列表和其他数据
+            return distMean, outcome, is_oddball, rule
 
 
 if __name__ == "__main__":
@@ -319,10 +344,10 @@ if __name__ == "__main__":
     #                                  trail_type="CP")
     # df_valid_CP = generate_outcome_angle(df_valid_CP,
     #                                      trail_type="CP")
-    df_test_CP = generate_dist_mean(all_n_trail=240,
-                                    trail_type="CP")
-    df_test_CP = generate_outcome_angle(df_test_CP,
-                                        trail_type="CP")
+    # df_test_CP = generate_dist_mean(all_n_trail=240,
+    #                                 trail_type="CP")
+    # df_test_CP = generate_outcome_angle(df_test_CP,
+    #                                     trail_type="CP")
 
     # df_train_OB = generate_dist_mean(all_n_trail=240,
     #                                  trail_type="OB")
@@ -332,19 +357,19 @@ if __name__ == "__main__":
     #                                  trail_type="OB")
     # df_valid_OB = generate_outcome_angle(df_valid_OB,
     #                                      trail_type="OB", )
-    df_test_OB = generate_dist_mean(all_n_trail=240,
-                                    trail_type="OB")
-    df_test_OB = generate_outcome_angle(df_test_OB,
-                                        trail_type="OB", )
-
-    df_train_combine = generate_dist_mean(all_n_trail=240000,
-                                          trail_type="combine")
-    df_train_combine = generate_outcome_angle(df_train_combine,
-                                              trail_type="combine", )
-    df_valid_combine = generate_dist_mean(all_n_trail=240000,
-                                          trail_type="combine")
-    df_valid_combine = generate_outcome_angle(df_valid_combine,
-                                              trail_type="combine", )
+    # df_test_OB = generate_dist_mean(all_n_trail=240,
+    #                                 trail_type="OB")
+    # df_test_OB = generate_outcome_angle(df_test_OB,
+    #                                     trail_type="OB", )
+    #
+    # df_train_combine = generate_dist_mean(all_n_trail=240000,
+    #                                       trail_type="combine")
+    # df_train_combine = generate_outcome_angle(df_train_combine,
+    #                                           trail_type="combine", )
+    # df_valid_combine = generate_dist_mean(all_n_trail=240000,
+    #                                       trail_type="combine")
+    # df_valid_combine = generate_outcome_angle(df_valid_combine,
+    #                                           trail_type="combine", )
 
     # csv_path = "../data/df_test_CP_100.csv"
     # df_OB_in_CP = pd.read_csv(csv_path)
@@ -361,26 +386,30 @@ if __name__ == "__main__":
     # df_OB.to_csv(os.path.join(data_dir, 'df_OB_100.csv'), index=False)
     # df_train_CP.to_csv(os.path.join(data_dir, 'df_train_CP.csv'), index=False)
     # df_valid_CP.to_csv(os.path.join(data_dir, 'df_valid_CP.csv'), index=False)
-    df_test_CP.to_csv(os.path.join(data_dir, 'df_test_CP_temp.csv'), index=False)
+    # df_test_CP.to_csv(os.path.join(data_dir, 'df_test_CP_temp.csv'), index=False)
 
     # df_train_OB.to_csv(os.path.join(data_dir, 'df_train_OB.csv'), index=False)
     # df_valid_OB.to_csv(os.path.join(data_dir, 'df_valid_OB.csv'), index=False)
-    df_test_OB.to_csv(os.path.join(data_dir, 'df_test_OB_temp.csv'), index=False)
-
-    df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine.csv'), index=False)
-    df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine.csv'), index=False)
-
-    # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
+    # df_test_OB.to_csv(os.path.join(data_dir, 'df_test_OB_temp.csv'), index=False)
     #
-    # dataset = generate_dataset(df_train)
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-    # count = 0
-    # for distMean, outcome, is_oddball, rule in dataloader:
-    #     distMean = distMean.unsqueeze(-1)  # 在最后添加一个维度
-    #     outcome = outcome.unsqueeze(-1)  # 在最后添加一个维度
+    # df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine.csv'), index=False)
+    # df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine.csv'), index=False)
+
+    df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
     #
-    #     print("distMean: ", distMean)
-    #     if count == 1:
-    #         break
-    #     count += 1
-    #     print("---------------------")
+    dataset = generate_dataset(df_train,
+                               transform_steps=None)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    count = 0
+    for i, data in enumerate(dataset):
+        images, distMean, outcome, is_oddball, rule = data
+        if i == 0:  # 只显示第一个数据块的图片
+            for j, img in enumerate(images):
+                img = np.transpose(img, (1, 2, 0))
+
+                # 现在你可以使用imshow来显示图像
+                plt.imshow(img)
+                plt.show()
+
+                # print(img.shape)
+            break  # 只显示第一个数据块，然后退出循环

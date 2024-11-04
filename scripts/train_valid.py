@@ -1,15 +1,16 @@
 import os
 import time
-
+import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 import torch
+from matplotlib import pyplot as plt
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from scripts.dataloader import generate_dataset
-from scripts.model import perceptual_network
+from scripts.model import perceptual_network, CNN
 from scripts.utils import determine_training_stops
 
 torch.manual_seed(20010509)
@@ -62,15 +63,62 @@ def fit_one_cycle(network,
             new_outcome[i, 0, :] = torch.tensor(0.)
             new_outcome[i, 1:, :] = outcome_true[i, :-1, :]
 
+        # 加入图像
+
+        # # 创建一个与 x 形状相同的张量，用于存储结果
+        # shifted_image = torch.zeros_like(image)
+        # # 获取 x 的维度
+        # batch_size, sequence_length, channels, height, width = image.shape
+        # # 使用 x 的维度来创建随机张量，除了时间维度（sequence_length）我们只需要1
+        # random_tensor = torch.randn(batch_size, 1, channels, height, width)
+        # # 将 x 向后顺移
+        # shifted_image[:, 1:, :, :, :] = image[:, :-1, :, :, :]
+        # # 将随机数填充到第一个位置
+        # shifted_image[:, 0, :, :, :] = random_tensor
+        # shifted_image = shifted_image.squeeze(0)
+
+        # 画图
+
+        # # 假设 shifted_image 的形状为 (sequence_length, channels, height, width)
+        # sequence_length = shifted_image.shape[0]  # 序列长度
+        # channels = shifted_image.shape[1]  # 通道数
+        #
+        # # 检查 channels 是否为 1 或 3 以适配灰度图或 RGB 图
+        # if channels == 1:
+        #     shifted_image = shifted_image.squeeze(1)  # 去除单通道维度
+        # elif channels == 3:
+        #     shifted_image = shifted_image.permute(0, 2, 3, 1)  # 调整通道顺序为 (sequence_length, height, width, channels)
+        #
+        # # 逐帧显示每个图像
+        # for i in range(sequence_length):
+        #     plt.imshow(shifted_image[i].cpu().numpy(), cmap='gray' if channels == 1 else None)
+        #     plt.title(f"Frame {i + 1}")
+        #     plt.axis('off')  # 隐藏坐标轴
+        #     plt.show()
+        #
+        #     time.sleep(1)  # 每张图显示 1 秒，可以根据需要调整时间
+        #     plt.close()  # 关闭当前图，以显示下一张图
+        # fcsdfc
+
         # 重置优化器
         optimizer.zero_grad()
+
+        # cnn = CNN().to(device)
+        # x = cnn(shifted_image.to(device))
 
         # 模型向前传播
         outcome_pre, out = network(new_outcome.to(device).float(), rule.to(device).float())
 
+        angles_rad = np.radians(outcome_true.cpu().numpy())
+        sin = torch.tensor(np.sin(angles_rad)).to(device)
+        cos = torch.tensor(np.cos(angles_rad)).to(device)
+        sin_cos = torch.cat((sin, cos), dim=2).to(device)
+
         # 计算损失
-        outcome_loss = loss_func(outcome_true.float().to(device),
-                                 outcome_pre.float().to(device), )
+        cosine_loss = 1 - F.cosine_similarity(sin_cos.float(),
+                                              outcome_pre.float(),
+                                              dim=2)
+        outcome_loss = torch.mean(cosine_loss)
 
         batch_all_loss = outcome_loss
         loss += batch_all_loss.item()
@@ -169,10 +217,10 @@ if __name__ == "__main__":
 
     # 模型参数
     model_name = "lstm"
-    input_size = 2048
+    input_size = 10
     hidden_size = 1024
-    num_layers = 5
-    output_size = 1
+    num_layers = 3
+    output_size = 2
     batch_size = 1
     sequence_length = 240
     model_dir = "../models/240_rule"
@@ -184,7 +232,7 @@ if __name__ == "__main__":
     warmup_epochs = 2
     tol = 1e-4
     saving_name = os.path.join(model_dir,
-                               f'{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_{model_name}_layers_{num_layers}_hidden_{hidden_size}_combine.h5')
+                               f'{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_{model_name}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.h5')
 
     # load dataframes
     data_dir = '../data/240_rule'
@@ -193,11 +241,13 @@ if __name__ == "__main__":
 
     # build dataloaders
     dataset_train = generate_dataset(df_train,
+                                     transform_steps=None,
                                      sequence_length=sequence_length, )
     dataloader_train = DataLoader(dataset_train,
                                   batch_size=batch_size,
                                   shuffle=False, )
     dataset_valid = generate_dataset(df_valid,
+                                     transform_steps=None,
                                      sequence_length=sequence_length, )
     dataloader_valid = DataLoader(dataset_valid,
                                   batch_size=batch_size,
@@ -215,7 +265,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(params=network.parameters(),
                                  lr=learning_rate,
                                  weight_decay=l2_decay, )
-    loss_func = nn.MSELoss()
+    loss_func = nn.BCELoss()
 
     # 训练
     network, losses = train_valid_loop(network=network,

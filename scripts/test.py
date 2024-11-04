@@ -1,6 +1,7 @@
+import math
 import os
 import time
-
+import torch.nn.functional as F
 import numpy as np
 import pandas as pd
 import torch
@@ -27,14 +28,14 @@ if __name__ == "__main__":
 
     # 模型参数
     model_name = "lstm"
-    input_size = 2048
-    hidden_size = 256
+    input_size = 10
+    hidden_size = 1024
     num_layers = 3
-    output_size = 1
+    output_size = 2
     batch_size = 1
     sequence_length = 240
     model_dir = "../models"
-    results_dir = "../results/csv/240_rule"
+    results_dir = "../results/csv"
     results_dir_sub = "../results/csv/sub"
     os.makedirs(results_dir, exist_ok=True)
 
@@ -46,8 +47,8 @@ if __name__ == "__main__":
     tol = 1e-4
 
     # load dataframes
-    data_dir = '../data/240_rule'
-    df_test = pd.read_csv(os.path.join(data_dir, 'df_test_CP_temp.csv'))
+    data_dir = '../data/sub'
+    df_test = pd.read_csv(os.path.join(data_dir, 'OB_401.csv'))
     # df_OB = pd.read_csv(os.path.join(data_dir, 'df_test_OB_300.csv'))
     # df_OB_in_CP = pd.read_csv(os.path.join(data_dir, 'df_test_OBinCP_300.csv'))
 
@@ -86,7 +87,7 @@ if __name__ == "__main__":
                                  output_size=output_size,
                                  num_layers=num_layers,
                                  model_name=model_name, ).to(device)
-    network.load_state_dict(torch.load("../models/240_rule/28_18_36_lstm_layers_3_hidden_256_combine.h5"))
+    network.load_state_dict(torch.load("../models/240_rule/4_11_32_lstm_layers_3_hidden_1024_input_10.h5"))
     for p in network.parameters(): p.requires_grad = False
     network.eval()
 
@@ -118,21 +119,47 @@ if __name__ == "__main__":
         # 模型向前传播
         outcome_pre, out = network(new_outcome.to(device).float(), rule.to(device).float())
 
+        angles_rad = np.radians(outcome_true.cpu().numpy())
+        sin = torch.tensor(np.sin(angles_rad)).to(device)
+        cos = torch.tensor(np.cos(angles_rad)).to(device)
+        sin_cos = torch.cat((sin, cos), dim=2).to(device)
+
         # 计算损失
-        outcome_loss = loss_func(outcome_true.float().to(device),
-                                 outcome_pre.float().to(device), )
+        cosine_loss = 1 - F.cosine_similarity(sin_cos.float(),
+                                              outcome_pre.float(),
+                                              dim=2)
+        outcome_loss = torch.mean(cosine_loss)
 
         batch_all_loss = outcome_loss
         loss += batch_all_loss.item()
 
+        # 初始化一个空列表来存储角度
+        angles = []
+
+        # 遍历张量中的每个元素
+        for i in range(outcome_pre.shape[1]):
+            # 提取第三维度的值
+            sin_value = outcome_pre[0, i, 0]
+            cos_value = outcome_pre[0, i, 1]
+
+            # 计算角度
+            angle = math.atan2(sin_value, cos_value)  # 使用atan2来计算角度
+
+            # 将弧度转换为角度
+            angle_degrees = math.degrees(angle)
+
+            # 将角度添加到列表中
+            angles.append(angle_degrees)
+
+
         # 将数据转换为 NumPy 数组
         distMean_true_np = distMean_true.cpu().numpy()
         outcome_true_np = outcome_true.cpu().numpy()
-        outcome_pre_np = outcome_pre.detach().cpu().numpy()
+        # outcome_pre_np = outcome_pre.detach().cpu().numpy()
 
         distMean_true_np = np.squeeze(distMean_true_np)
         outcome_true_np = np.squeeze(outcome_true_np)
-        outcome_pre_np = np.squeeze(outcome_pre_np)
+        # outcome_pre_np = np.squeeze(outcome_pre_np)
 
         # is_changepoint_np = is_changepoint.cpu().numpy()
         # is_changepoint_np = np.squeeze(is_changepoint_np)
@@ -143,7 +170,7 @@ if __name__ == "__main__":
         batch_data = pd.DataFrame({
             'distMean_true': distMean_true_np,
             'outcome_true': outcome_true_np,
-            'outcome_pre': outcome_pre_np,
+            'outcome_pre': angles,
             'is_oddball': is_oddball_np,
             # 'is_changepoint': is_changepoint_np
         })
@@ -159,5 +186,5 @@ if __name__ == "__main__":
         iterator.set_description(message)
 
     # 将最终数据写入 CSV 文件，保存在 results_dir 中
-    csv_path = os.path.join(results_dir, 'combine_CP_LSTM_l_3_h_256_240.csv')
+    csv_path = os.path.join(results_dir_sub, f'combine_OB_{model_name}_l_{num_layers}_h_{hidden_size}_i_{input_size}_cos.csv')
     results.to_csv(csv_path, index=False)
