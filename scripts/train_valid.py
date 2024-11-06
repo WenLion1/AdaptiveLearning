@@ -29,6 +29,7 @@ def fit_one_cycle(network,
                   idx_epoch=0,
                   train=True,
                   sequence_length=100, ):
+
     """
     一次训练或者验证过程
 

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import torch
 from torch import nn
@@ -141,6 +143,22 @@ class perceptual_network(nn.Module):
         rule_input = self.fc_rule(rule)
 
         combined = torch.cat((sin_cos, rule_input), dim=2)
+
+        angles = []
+        # 遍历张量中的每个元素
+        for i in range(sin_cos.shape[1]):
+            # 提取第三维度的值
+            sin_value = sin_cos[0, i, 0]
+            cos_value = sin_cos[0, i, 1]
+
+            # 计算角度
+            angle = math.atan2(sin_value, cos_value)  # 使用atan2来计算角度
+
+            # 将弧度转换为角度
+            angle_degrees = math.degrees(angle)
+
+            # 将角度添加到列表中
+            angles.append(angle_degrees)
 
         out, hn = self.network(combined)
         # out = self.fc(out[:, -1, :])

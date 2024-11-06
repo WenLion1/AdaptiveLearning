@@ -65,7 +65,7 @@ def paint_table(csv_path,
     plt.ylabel('Angle (0 to 400)')
     plt.title(f'{save_name}')
     plt.xlim(0, data_len)  # 设置 x 轴范围
-    plt.ylim(-400, 400)  # 设置 y 轴范围
+    plt.ylim(0, 400)  # 设置 y 轴范围
     plt.legend(loc='lower right')  # 显示图例并设置位置
     plt.grid()
 
@@ -218,20 +218,24 @@ def paint_2C_combined_figure(file_path_1,
                              png_save_path="../results/png/2C",
                              png_save_name="combined_difference_output",
                              is_nihe=0, ):
+    # 设置字体，以支持中文字符
+    plt.rcParams['font.family'] = 'SimHei'  # 使用黑体字体
+    plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
+
     # 读取第一个 CSV 文件
     df1 = pd.read_csv(file_path_1)
     # 读取第二个 CSV 文件
     df2 = pd.read_csv(file_path_2)
 
     # 提取 outcome_true 和 outcome_pre 列
-    distMean1 = df1['distMean_true']
-    outcome_true_1 = df1['outcome_true']
-    outcome_pre_1 = df1['outcome_pre']
+    distMean1 = df1['distMean']
+    outcome_true_1 = df1['outcome']
+    outcome_pre_1 = df1['pred']
     outcome_pre_shifted_1 = outcome_pre_1.shift(-1)
 
-    distMean2 = df2['distMean_true']
-    outcome_true_2 = df2['outcome_true']
-    outcome_pre_2 = df2['outcome_pre']
+    distMean2 = df2['distMean']
+    outcome_true_2 = df2['outcome']
+    outcome_pre_2 = df2['pred']
     outcome_pre_shifted_2 = outcome_pre_2.shift(-1)
 
     # 计算 signed_diff
@@ -274,11 +278,11 @@ def paint_2C_combined_figure(file_path_1,
     sizes2 = size_factor * (1 + (np.abs(np.array(signed_diffs_true_2[20:])) / 180)) ** 2  # 用平方放大远离中心的点
 
     # 绘制第一个图的散点图
-    plt.scatter(signed_diffs_true_1[20:], signed_diffs_pre_1[20:], alpha=0.7, color='blue',
-                label='CP', s=sizes1)
+    plt.scatter(signed_diffs_true_1[20:], signed_diffs_pre_1[20:], alpha=0.7, color='orange',
+                label='改变点条件', s=sizes1)
     # 绘制第二个图的散点图
-    plt.scatter(signed_diffs_true_2[20:], signed_diffs_pre_2[20:], alpha=0.7, color='red',
-                label='OB', s=sizes2)
+    plt.scatter(signed_diffs_true_2[20:], signed_diffs_pre_2[20:], alpha=0.7, color='deepskyblue',
+                label='奇异点条件', s=sizes2)
 
     if is_nihe == 1:
         x1 = np.array(signed_diffs_true_1[20:]).astype(float)  # 确保为浮点数
@@ -326,14 +330,62 @@ def paint_2C_combined_figure(file_path_1,
     plt.show()
 
 
+def batch_combined_figure(folder_path, figure_type, save_path):
+    """
+    遍历文件夹中的每个子文件夹，调用 paint_2C_combined_figure 函数进行处理
+
+    :param folder_path: 文件夹路径
+    :param figure_type: str，决定PNG文件命名的类型，可以是 "model" 或 "sub"
+    :param save_path: str，PNG文件保存的主路径
+    :return:
+    """
+    # 遍历文件夹中的每个子文件夹
+    for subdir, _, files in os.walk(folder_path):
+        # 筛选出两个 CSV 文件
+        csv_files = [f for f in files if f.endswith('.csv')]
+
+        if len(csv_files) != 2:
+            print(f"在文件夹 {subdir} 中找不到两个 CSV 文件，跳过该文件夹。")
+            continue  # 如果不是两个文件，跳过此子文件夹
+
+        # 获取文件路径
+        file_path_1 = os.path.join(subdir, csv_files[0])
+        file_path_2 = os.path.join(subdir, csv_files[1])
+
+        # 生成 PNG 保存路径和名称
+        subfolder_name = os.path.basename(subdir)  # 获取子文件夹名称
+        png_save_path = os.path.join(save_path, subfolder_name)  # 拼接新的保存路径
+
+        # 确保子文件夹存在，若不存在则创建
+        os.makedirs(png_save_path, exist_ok=True)  # 创建目录
+
+        if figure_type == "model":
+            png_save_name = f"model_{subfolder_name}"  # 使用 "model_" 前缀
+        elif figure_type == "sub":
+            png_save_name = f"sub_{subfolder_name}"  # 使用 "sub_" 前缀
+        else:
+            raise ValueError("figure_type 必须是 'model' 或 'sub'")
+
+        # 调用绘图函数
+        paint_2C_combined_figure(file_path_1, file_path_2, png_save_path=png_save_path, png_save_name=png_save_name)
+
+
 if __name__ == "__main__":
-    csv_path = "../results/csv/sub/combine_OB_lstm_l_3_h_1024_i_10_cos.csv"
-    saving_name = "combine_OB_LSTM_l_3_h_1024_i_10_cos"
-    saving_path = "../results/png/sub/401"
-    paint_table(csv_path=csv_path,
-                save_name=saving_name,
-                save_path=saving_path,
-                trail_type="OB", )
+    # csv_path = "../results/csv/sub/403/CP_sub.csv"
+    # saving_name = "CP_sub"
+    # saving_path = "../results/png/sub/403"
+    # paint_table(csv_path=csv_path,
+    #             save_name=saving_name,
+    #             save_path=saving_path,
+    #             trail_type="CP", )
+    #
+    # csv_path = "../results/csv/sub/403/OB_sub.csv"
+    # saving_name = "OB_sub"
+    # saving_path = "../results/png/sub/403"
+    # paint_table(csv_path=csv_path,
+    #             save_name=saving_name,
+    #             save_path=saving_path,
+    #             trail_type="OB", )
 
     # file_path = "../results/csv/sub/401/combine_CP_LSTM_l_3_h_1024_i_1024.csv"
     # paint_2C_figure(file_path=file_path,
@@ -341,8 +393,13 @@ if __name__ == "__main__":
     #                 png_save_name="combine_CP_LSTM_l_3_h_1024_i_1024",
     #                 png_save_path="../results/png/sub/401",
     #                 ignore_number=20, )
-    # paint_2C_combined_figure(file_path_1="../results/csv/sub/combine_CP_lstm_l_3_h_1024_i_10_cos.csv",
-    #                          file_path_2="../results/csv/sub/combine_OB_lstm_l_3_h_1024_i_10_cos.csv",
-    #                          png_save_path="../results/png/sub/combine",
-    #                          png_save_name="combineCP_combineOB_lstm_l_3_h_1024_i_10_240",
-    #                          is_nihe=0)
+    # paint_2C_combined_figure(
+    #     file_path_1="../results/csv/sub/403/combine_CP_4_17_20_lstm_layers_3_hidden_1024_input_10_cos.csv",
+    #     file_path_2="../results/csv/sub/403/combine_OB_4_17_20_lstm_layers_3_hidden_1024_input_10_cos.csv",
+    #     png_save_path="../results/png/sub/403",
+    #     png_save_name="CP_OB_403",
+    #     is_nihe=0)
+
+    batch_combined_figure(folder_path="../data/sub/pa",
+                          figure_type="sub",
+                          save_path="../results/png/sub/pa")

@@ -370,6 +370,10 @@ if __name__ == "__main__":
     #                                       trail_type="combine")
     # df_valid_combine = generate_outcome_angle(df_valid_combine,
     #                                           trail_type="combine", )
+    df_test_combine = generate_dist_mean(all_n_trail=240000,
+                                         trail_type="combine")
+    df_test_combine = generate_outcome_angle(df_test_combine,
+                                             trail_type="combine", )
 
     # csv_path = "../data/df_test_CP_100.csv"
     # df_OB_in_CP = pd.read_csv(csv_path)
@@ -394,22 +398,23 @@ if __name__ == "__main__":
     #
     # df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine.csv'), index=False)
     # df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine.csv'), index=False)
+    df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine.csv'), index=False)
 
-    df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
+    # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
+    # #
+    # dataset = generate_dataset(df_train,
+    #                            transform_steps=None)
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+    # count = 0
+    # for i, data in enumerate(dataset):
+    #     images, distMean, outcome, is_oddball, rule = data
+    #     if i == 0:  # 只显示第一个数据块的图片
+    #         for j, img in enumerate(images):
+    #             img = np.transpose(img, (1, 2, 0))
     #
-    dataset = generate_dataset(df_train,
-                               transform_steps=None)
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
-    count = 0
-    for i, data in enumerate(dataset):
-        images, distMean, outcome, is_oddball, rule = data
-        if i == 0:  # 只显示第一个数据块的图片
-            for j, img in enumerate(images):
-                img = np.transpose(img, (1, 2, 0))
-
-                # 现在你可以使用imshow来显示图像
-                plt.imshow(img)
-                plt.show()
-
-                # print(img.shape)
-            break  # 只显示第一个数据块，然后退出循环
+    #             # 现在你可以使用imshow来显示图像
+    #             plt.imshow(img)
+    #             plt.show()
+    #
+    #             # print(img.shape)
+    #         break  # 只显示第一个数据块，然后退出循环

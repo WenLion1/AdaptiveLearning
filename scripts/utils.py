@@ -6,7 +6,12 @@ Created on Sun Apr 26 12:42:26 2023
 """
 
 import os, torch
+import re
+import shutil
+
 import numpy as np
+import pandas as pd
+import scipy.io
 
 torch.manual_seed(12345)
 np.random.seed(12345)
@@ -270,360 +275,205 @@ def add_noise_instance_for_training(batch_features: Tensor,
     return batch_features
 
 
-def fit_one_cycle(
-        perceptual_network,
-        action_network,
-        dataloader,
-        optimizer,
-        loss_func,
-        device='cpu',
-        idx_epoch=0,
-        train=True,
-        verbose=0,
-        n_noise=2,
-):
-    """这个方程会训练和检验模型，这个训练和检验是一个循环。
+def classify_file_by_endwith_num(folder_path, ):
     """
-    if train:
-        perceptual_network.train(True).to(device)
-        action_network.train(True).to(device)
-    else:
-        perceptual_network.eval().to(device)
-        action_network.eval().to(device)
-    loss = 0
-    yp_true, yd_true = [], []
-    yp_pred, yd_pred = [], []
-    iterator = tqdm(enumerate(dataloader))
-    for idx_batch, (image1, image2, batch_label, angle1, angle2, rule, action) in iterator:
-        rule = torch.vstack([1 - rule, rule]).T.float()
-        action = torch.vstack([1 - action, action]).T.float()
-        if train and np.random.randn() > 0.5:  # 50% chance we add noise to the images
-            image1 = noise_func(image1, noise_level=np.random.uniform(1e-3, 2e-1, size=1)[0])
-            image2 = noise_func(image2, noise_level=np.random.uniform(1e-3, 2e-1, size=1)[0])
+    根据文件末尾数字将其分类到对应数字命名的文件夹内（不存在该文件夹则创建）
 
-        if n_noise > 0:
-            image1 = add_noise_instance_for_training(image1, n_noise, clip_output=True, )
-            image2 = add_noise_instance_for_training(image2, n_noise, clip_output=True, )
-            noisy_labels = torch.ones(batch_label.shape) * (1 / 2)
-            noisy_labels = noisy_labels[:n_noise]
-            batch_label = torch.cat([batch_label.to(device), noisy_labels.to(device)])
-            rule = torch.cat([rule.to(device), noisy_labels.to(device)])
-            action = torch.cat([action.to(device), noisy_labels.to(device)])
-        # zero grad
-        optimizer.zero_grad()
-
-        # forward pass
-        _, perceptual_prediction = perceptual_network([image1.to(device), image2.to(device)], )
-        decision = action_network(perceptual_prediction, rule.to(device))
-
-        # compute loss
-        # log_predictions = torch.log(perceptual_prediction)
-        batch_perceptual_loss = loss_func(perceptual_prediction.float().to(device),
-                                          batch_label.float().to(device), )
-        # log_decision = torch.log(decision)
-        batch_decision_loss = loss_func(decision.float().to(device),
-                                        action.float().to(device), )
-        batch_loss = batch_perceptual_loss + batch_decision_loss
-        loss += batch_loss.item()  # use this function to save memory
-
-        # append labels and predictions
-        if n_noise > 0:
-            ## perceptual
-            yp_true.append(batch_label.detach().cpu().numpy()[:-n_noise])
-            yp_pred.append(perceptual_prediction.detach().cpu().numpy()[:-n_noise])
-            ## action
-            yd_true.append(action.detach().cpu().numpy()[:-n_noise])
-            yd_pred.append(decision.detach().cpu().numpy()[:-n_noise])
-        else:
-            ## perceptual
-            yp_true.append(batch_label.detach().cpu().numpy())
-            yp_pred.append(perceptual_prediction.detach().cpu().numpy())
-            ## action
-            yd_true.append(action.detach().cpu().numpy())
-            yd_pred.append(decision.detach().cpu().numpy())
-
-        if train:
-            # bachpropagation
-            batch_loss.backward()
-            # modify weights
-            optimizer.step()
-
-        # print message
-        if verbose > 0:
-            try:
-                score_p = roc_auc_score(np.concatenate(yp_true),
-                                        np.concatenate(yp_pred))
-                score_d = roc_auc_score(np.concatenate(yd_true),
-                                        np.concatenate(yd_pred))
-            except Exception as e:
-                print(e)
-                score_p = np.nan
-                score_d = np.nan
-            message = f"""epoch {idx_epoch + 1}-
-{idx_batch + 1:3.0f}-{len(dataloader):4.0f}/{100 * (idx_batch + 1) / len(dataloader):2.3f}%, 
-loss = {loss / (idx_batch + 1):2.4f}, S(perceptual) = {score_p:.4f}, S(decision) = {score_d:.4f}
-""".replace('\n', '')
-            iterator.set_description(message)
-    return perceptual_network, action_network, loss / (idx_batch + 1)
-
-
-def train_valid_loop(
-        perceptual_network,
-        action_network,
-        dataloader_train,
-        dataloader_valid,
-        optimizer,
-        loss_func,
-        device='cpu',
-        n_epochs=int(1e3),
-        verbose=0,
-        patience=5,
-        warmup_epochs=5,
-        tol=1e-4,
-        n_noise=2,
-        saving_names={'model_saving_name': True, },
-):
-    """这个方程利用一个循环的训练和检验方程，多循环地训练和检验模型，直达模型的valid loss在连续多次检验后都
-    没有变得更好。
-
+    :param folder_path: 文件夹地址
+    :return:
     """
-    best_valid_loss = np.inf
-    losses = []
-    counts = 0
-    for idx_epoch in range(n_epochs):
-        print('Training ...')
-        perceptual_network, action_network, loss_train = fit_one_cycle(
-            perceptual_network,
-            action_network,
-            dataloader_train,
-            optimizer,
-            loss_func,
-            device=device,
-            idx_epoch=idx_epoch,
-            train=True,
-            verbose=verbose,
-            n_noise=n_noise,
-        )
-        print('Validating ...')
-        with torch.no_grad():
-            _, _, loss_valid = fit_one_cycle(
-                perceptual_network,
-                action_network,
-                dataloader_valid,
-                optimizer,
-                loss_func,
-                device=device,
-                idx_epoch=idx_epoch,
-                train=False,
-                verbose=verbose,
-                n_noise=0,
-            )
+    # 检查文件夹是否存在
+    if not os.path.isdir(folder_path):
+        raise ValueError(f"文件夹 '{folder_path}' 不存在。")
 
-        losses.append([loss_train, loss_valid])
+    # 遍历文件夹中的所有文件
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
 
-        best_valid_loss, counts = determine_training_stops([perceptual_network, action_network, ],
-                                                           idx_epoch=idx_epoch,
-                                                           warmup_epochs=warmup_epochs,
-                                                           valid_loss=loss_valid,
-                                                           counts=counts,
-                                                           best_valid_loss=best_valid_loss,
-                                                           tol=tol,
-                                                           saving_names=saving_names,
-                                                           )
-        if counts > patience:
-            break
-        else:
-            message = f"""epoch {idx_epoch + 1}, 
-best validation loss = {best_valid_loss:.4f},count = {counts}
-""".replace('\n', '')
-            print(message)
-    return perceptual_network, action_network, losses
+        # 确保处理的是文件而不是子文件夹
+        if os.path.isfile(file_path):
+            # 使用正则表达式匹配文件名结尾的数字
+            match = re.search(r'(\d+)(?=\.\w+$)', filename)
+
+            if match:
+                # 获取文件名中的数字
+                folder_num = match.group(1)
+
+                # 创建对应的子文件夹路径
+                target_folder = os.path.join(folder_path, folder_num)
+
+                # 如果子文件夹不存在，则创建
+                os.makedirs(target_folder, exist_ok=True)
+
+                # 移动文件到对应的子文件夹
+                shutil.move(file_path, os.path.join(target_folder, filename))
+                print(f"已移动文件 {filename} 到文件夹 {target_folder}")
 
 
-def fit_rule_one_cycle(
-        full_model,
-        dataloader,
-        optimizer,
-        loss_func,
-        batch_size=1,
-        device='cpu',
-        idx_epoch=0,
-        train=True,
-        verbose=0, ):
-    perceptual_network, action_network, rule_network = full_model
-    if train:
-        rule_network.train(True).to(device)
-        # action_network.train(True).to(device)
-    else:
-        rule_network.eval().to(device)
-    action_network.eval().to(device)
-    perceptual_network.eval()
-    loss = 0
-    yp_true, yd_true, yr_true = [], [], []
-    yp_pred, yd_pred, yr_pred = [], [], []
-    iterator = tqdm(enumerate(dataloader))
-    for idx_trial, (image1, image2, batch_label, angle1, angle2, rule, action) in iterator:
-        current_rule = torch.vstack([1 - rule, rule]).T.float()
-        current_decision = torch.vstack([1 - action, action]).T.float()
-        if train and np.random.randn() > 0.5:  # 50% chance we add noise to the images
-            image1 = noise_func(image1, noise_level=np.random.uniform(0.1, 0.2, size=1)[0])
-            image2 = noise_func(image2, noise_level=np.random.uniform(0.1, 0.2, size=1)[0])
-        # zero grad
-        optimizer.zero_grad()
-        if idx_trial == 0:
-            # initialize for the first trial
-            hidden_state = torch.rand((rule_network.n_lstm, batch_size,
-                                       rule_network.lstm_hidden)).to(device)
-            cell_state = torch.rand((rule_network.n_lstm, batch_size,
-                                     rule_network.lstm_hidden)).to(device)
-            last_predicted_perceptual_label = torch.ones(batch_label.shape).float().detach() * 0.5
-            last_true_rule = torch.vstack([1 - rule, rule]).T.float()
-            last_predicted_decision = torch.ones(batch_label.shape).float().detach() * 0.5
-            last_correctness = torch.ones(batch_label.shape).float().detach() * 0.5
-            last_predicted_rule = torch.vstack([1 - rule, rule]).T.float()
+def get_mat_csv_batch(file_path,
+                      key_names,
+                      column_names,
+                      csv_save_path, ):
+    """
+    批量将mat文件转换为csv文件
 
-        # forward pass
-        with torch.no_grad():
-            outputs, current_predicted_perceptual_label = perceptual_network([image1.to(device),
-                                                                              image2.to(device)])
-        rule_network_input = [
-            last_predicted_perceptual_label.view(batch_size, 1, last_predicted_perceptual_label.shape[-1]).float().to(
-                device),
-            last_true_rule.view(batch_size, 1, last_predicted_decision.shape[-1]).float().to(device),
-            last_predicted_decision.view(batch_size, 1, last_predicted_decision.shape[-1]).float().to(device),
-            last_predicted_rule.view(batch_size, 1, last_predicted_rule.shape[-1]).float().to(device),
-            last_correctness.view(batch_size, 1, last_correctness.shape[-1]).float().to(device),
-        ]
-        current_predicted_rule, (hidden_state, cell_state) = rule_network(rule_network_input,
-                                                                          hidden_state=hidden_state.detach(),
-                                                                          cell_state=cell_state.detach(), )
-        current_predicted_decision = action_network(current_predicted_perceptual_label,
-                                                    current_predicted_rule,
-                                                    )
-        # update for the next trial
-        last_predicted_perceptual_label = current_predicted_perceptual_label.detach()
-        last_predicted_rule = current_predicted_rule.to(device).detach()
-        last_predicted_decision = current_predicted_decision.detach()
-        last_true_rule = torch.vstack([1 - rule, rule]).T.float()
-        correctness = last_predicted_decision.argmax(1) == action[0]
-        correctness = correctness.long()
-        last_correctness = torch.vstack([1 - correctness, correctness]).T.detach()
-
-        # recording
-        ## true perceptual label
-        yp_true.append(batch_label.detach().cpu().numpy())
-        ## true action/key label
-        yd_true.append(action.detach().cpu().numpy())
-        ## true rule label
-        yr_true.append(rule.detach().cpu().numpy())
-        ## predicted perceptual label
-        yp_pred.append(current_predicted_perceptual_label.detach().cpu().numpy())
-        ## predicted action/key label
-        yd_pred.append(current_predicted_decision.detach().cpu().numpy())
-        ## predicted rule label
-        yr_pred.append(current_predicted_rule.detach().cpu().numpy())
-
-        # compute loss
-        batch_perceptual_loss = loss_func(current_predicted_perceptual_label.float().to(device),
-                                          batch_label.float().to(device), )
-        batch_rule_loss = loss_func(current_predicted_rule.to(device), current_rule.to(device))
-        batch_decision_loss = loss_func(current_predicted_decision.to(device), current_decision.to(device))
-        batch_loss = batch_perceptual_loss + batch_rule_loss + batch_decision_loss
-        loss += batch_loss.item()
-
-        if train and idx_trial > 0:
-            # bachpropagation
-            batch_loss.backward()
-            # modify weights
-            optimizer.step()
-
-        # print message
-        if verbose > 0:
-            try:
-                score_p = roc_auc_score(np.concatenate(yp_true),
-                                        np.concatenate(yp_pred))
-                score_d = roc_auc_score(np.concatenate(yd_true),
-                                        np.concatenate(yd_pred).argmax(1))  # [:,-1])
-                score_r = roc_auc_score(np.concatenate(yr_true),
-                                        np.concatenate(yr_pred).argmax(1))  # [:,-1])
-            except Exception as e:
-                # print(e)
-                score_r = np.nan
-                score_p = np.nan
-                score_d = np.nan
-            message = f"""epoch {idx_epoch}-
-{idx_trial + 1:4.0f}-{len(dataloader):4.0f}/{100 * (idx_trial + 1) / len(dataloader):2.3f}%, 
-loss = {loss / (idx_trial + 1):2.4f}, S(perctual) = {score_p:.4f},S(decision) = {score_d:.4f},S(rule) = {score_r:.4f}
-""".replace('\n', '')
-            iterator.set_description(message)
-    return (perceptual_network, action_network, rule_network), loss / (idx_trial + 1)
-
-
-def rule_train_valid_loop(
-        full_model,
-        dataloader_train,
-        dataloader_valid,
-        optimizer,
-        loss_func,
-        device='cpu',
-        n_epochs=int(1e3),
-        verbose=0,
-        batch_size=8,
-        patience=5,
-        warmup_epochs=5,
-        tol=1e-4,
-        saving_names={'model_saving_name': True, },
-):
-    """这个方程利用一个循环的训练和检验方程，多循环地训练和检验模型，直达模型的valid loss在连续多次检验后都
-    没有变得更好。
+    :param file_path: mat文件夹路径
+    :param key_name: 需要转换的key list, 若为空则转换该mat的所有key_name
+    :param column_names: 需要转换的列名 list
+    :param csv_save_path: csv保存路径（文件夹）
+    :return:
     """
 
-    best_valid_loss = np.inf
-    losses = []
-    counts = 0
-    for idx_epoch in range(n_epochs):
-        print('Training ...')
-        (perceptual_network, action_network, rule_network), loss_train = fit_rule_one_cycle(
-            full_model,
-            dataloader_train,
-            optimizer,
-            loss_func,
-            batch_size=batch_size,
-            device=device,
-            idx_epoch=idx_epoch,
-            train=True,
-            verbose=verbose,
-        )
-        print('Validating ...')
-        with torch.no_grad():
-            _, loss_valid = fit_rule_one_cycle(
-                full_model,
-                dataloader_valid,
-                optimizer,
-                loss_func,
-                batch_size=batch_size,
-                device=device,
-                idx_epoch=idx_epoch,
-                train=False,
-                verbose=verbose,
-            )
+    os.makedirs(csv_save_path, exist_ok=True)
 
-        losses.append([loss_train, loss_valid])
+    for file_name in os.listdir(file_path):
+        if file_name.endswith(".mat"):
+            mat_file_path = os.path.join(file_path, file_name)
+            base_name = os.path.splitext(file_name)[0]
+            mat_data = scipy.io.loadmat(mat_file_path)
+            current_key_names = key_names if key_names else [key for key in mat_data.keys() if not key.startswith("__")]
 
-        best_valid_loss, counts = determine_training_stops([perceptual_network, action_network, rule_network],
-                                                           idx_epoch=idx_epoch,
-                                                           warmup_epochs=warmup_epochs,
-                                                           valid_loss=loss_valid,
-                                                           counts=counts,
-                                                           best_valid_loss=best_valid_loss,
-                                                           tol=tol,
-                                                           saving_names=saving_names,
-                                                           )
-        if counts > patience:
-            break
+            for key_name in current_key_names:
+                csv_file_name = f"{base_name}_{key_name}.csv"
+                save_path = os.path.join(csv_save_path, csv_file_name)
+
+                try:
+                    get_mat_to_csv(mat_file_path=mat_file_path,
+                                   key_name=key_name,
+                                   column_names=column_names,
+                                   csv_save_path=save_path,
+                                   change_num=-1, )
+                except ValueError as e:
+                    print(f"跳过文件{file_name}, 错误信息：{e}")
+    print("批量处理完毕")
+
+
+def get_mat_to_csv(mat_file_path,
+                   key_name,
+                   column_names,
+                   csv_save_path,
+                   change_num=-1, ):
+    """
+    提取一个mat文件数据到csv中
+
+    :param change_num: 如果遇到Nan，则替换成对应数字
+    :param mat_file_path: mat文件路径
+    :param key_name: 需要提取的文件key
+    :param column_names: 需要提取的列 list
+    :param csv_save_path: csv文件保存路径
+    :return:
+    """
+
+    # 加载mat文件
+    mat_data = scipy.io.loadmat(mat_file_path)
+
+    # 检查键名
+    if key_name not in mat_data:
+        raise ValueError(f"MATLAB文件中找不到键‘{key_name}’，请确认数据的键名。")
+
+    # 提取数据
+    data = mat_data[key_name]
+
+    # 创建一个空字典以存储提取的数据
+    extracted_data = {}
+
+    # 遍历每个列名并提取对应的数据
+    for column in column_names:
+        if data[f"{column}"] is not None:
+            # 获取并展平数据
+            column_data = data[column][0][0].flatten()
+
+            # 检查该列数据是否全为 NaN
+            if np.isnan(column_data).all():
+                # 如果该列全为 NaN，则用 -1 替换
+                column_data = np.full_like(column_data, -1, dtype=float)
+
+            extracted_data[column] = column_data  # 添加到提取的数据字典中
         else:
-            message = f"""epoch {idx_epoch + 1}, 
-best validation loss = {best_valid_loss:.4f},count = {counts}
-""".replace('\n', '')
-            print(message)
-    return (perceptual_network, action_network, rule_network), losses
+            raise ValueError(f"指定的列名‘{column}’在数据中不存在。")
+
+    # 将提取的数据转换为DataFrame
+    df = pd.DataFrame(extracted_data)
+
+    # 保存为CSV文件
+    df.to_csv(csv_save_path, index=False)
+    print(f"数据已保存到 {csv_save_path}。")
+
+
+def add_rule(folder_path):
+    """
+    遍历指定文件夹及其所有子文件夹的CSV文件，按文件名的规则添加"rule"列
+
+    :param folder_path: 需要处理的文件夹路径
+    :return:
+    """
+
+    # 遍历文件夹及其子文件夹
+    for root, _, files in os.walk(folder_path):
+        for filename in files:
+            # 只处理CSV文件
+            if filename.endswith('.csv'):
+                # 生成文件的完整路径
+                file_path = os.path.join(root, filename)
+
+                # 判断文件名是否包含 "Oddball" 或 "CP"
+                if "Oddball" in filename:
+                    rule_value = -1
+                elif "CP" in filename:
+                    rule_value = 1
+                else:
+                    continue  # 如果文件名不包含指定关键词，跳过
+
+                # 读取CSV文件
+                df = pd.read_csv(file_path)
+
+                # 添加"rule"列，并设置相应的值
+                df['rule'] = rule_value
+
+                # 保存更新后的文件
+                df.to_csv(file_path, index=False)
+                print(f"已更新文件：{file_path}，添加 rule 列，值为 {rule_value}")
+
+
+def change_oddball_to_isoddball(folder_name):
+    """
+    遍历指定文件夹及其子文件夹中的所有CSV文件，
+    将其中的 'oddball' 列名修改为 'is_oddball'。
+
+    参数：
+    - folder_name: str，目标文件夹的路径。
+    """
+    # 遍历文件夹及子文件夹
+    for root, dirs, files in os.walk(folder_name):
+        for file in files:
+            if file.endswith('.csv'):
+                file_path = os.path.join(root, file)
+                try:
+                    # 读取CSV文件
+                    df = pd.read_csv(file_path)
+
+                    # 检查是否存在 'oddball' 列
+                    if 'oddBall' in df.columns:
+                        # 修改列名
+                        df.rename(columns={'oddBall': 'is_oddball'}, inplace=True)
+
+                        # 将修改后的数据保存回CSV文件
+                        df.to_csv(file_path, index=False)
+                        print(f"已修改文件: {file_path} 中的 'oddBall' 列为 'is_oddball'")
+                    else:
+                        print(f"文件: {file_path} 中未找到 'oddBall' 列")
+                except Exception as e:
+                    print(f"处理文件 {file_path} 时出错: {e}")
+
+
+if __name__ == "__main__":
+    # get_mat_csv_batch(file_path="../../behavior/pa",
+    #                   key_names=[],
+    #                   column_names=["distMean", "outcome", "pred", "oddBall"],
+    #                   csv_save_path="../data/sub/pa", )
+
+    # add_rule(folder_path="../data/sub/pa")
+
+    # change_oddball_to_isoddball(folder_name="../data/sub/pa")
+
+    classify_file_by_endwith_num(folder_path="../data/sub/pa")
