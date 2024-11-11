@@ -461,19 +461,19 @@ def change_oddball_to_isoddball(folder_name):
                         df.to_csv(file_path, index=False)
                         print(f"已修改文件: {file_path} 中的 'oddBall' 列为 'is_oddball'")
                     else:
-                        print(f"文件: {file_path} 中未找到 'oddBall' 列")
+                        print(f"文件: {file_path} 中未找到 'oddBalcl' 列")
                 except Exception as e:
                     print(f"处理文件 {file_path} 时出错: {e}")
 
 
 if __name__ == "__main__":
-    # get_mat_csv_batch(file_path="../../behavior/pa",
+    # get_mat_csv_batch(file_path="C:/Learn/Project/bylw/cannonBehavData_forDryad",
     #                   key_names=[],
     #                   column_names=["distMean", "outcome", "pred", "oddBall"],
-    #                   csv_save_path="../data/sub/pa", )
+    #                   csv_save_path="../data/sub/yuanwen", )
 
-    # add_rule(folder_path="../data/sub/pa")
+    add_rule(folder_path="../data/sub/yuanwen")
 
-    # change_oddball_to_isoddball(folder_name="../data/sub/pa")
+    change_oddball_to_isoddball(folder_name="../data/sub/yuanwen")
 
-    classify_file_by_endwith_num(folder_path="../data/sub/pa")
+    classify_file_by_endwith_num(folder_path="../data/sub/yuanwen")

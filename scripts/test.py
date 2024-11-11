@@ -24,18 +24,20 @@ print(f'working on {device}')
 def evaluate_model(data_dir,
                    model_path,
                    results_dir,
-                   hidden_states_save_dir,
+                   hidden_states_save_dir="../hidden",
                    model_type="lstm",
                    sequence_length=240,
                    input_size=10,
                    hidden_size=1024,
                    num_layers=3,
                    output_size=2,
-                   batch_size=1):
+                   batch_size=1,
+                   is_save_hidden_state=0,):
     """
     评估预训练模型在提供的数据集上的表现。
 
     参数：
+    - is_save_hidden_state: int，是否保存隐藏层，1-保存，0-不保存
     - data_dir: str，包含CSV数据的目录路径。
     - model_path: str，预训练模型文件的路径。
     - results_dir: str，结果将保存到的目录路径
@@ -139,9 +141,10 @@ def evaluate_model(data_dir,
         batch_data.dropna(how='all', axis=1, inplace=True)  # 删除全是NaN的列
         results = pd.concat([results, batch_data], ignore_index=True)  # 追加到结果中
 
-    hidden_states = np.vstack(hidden_states)
-    torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
-                                                    f"{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.csv"))
+    if is_save_hidden_state == 1:
+        hidden_states = np.vstack(hidden_states)
+        torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
+                                                    f"{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.pt"))
 
     # 计算平均损失并打印
     average_loss = loss / len(dataloader_CP)
@@ -166,13 +169,15 @@ def evaluate_model(data_dir,
 def batch_evaluate(data_folder_path,
                    model_path,
                    results_folder_path,
+                   hidden_state_save_dir="../hidden",
                    model_type="lstm",
                    sequence_length=240,
                    input_size=10,
                    hidden_size=1024,
                    num_layers=3,
                    output_size=2,
-                   batch_size=1):
+                   batch_size=1,
+                   is_save_hidden_state=0,):
     """
     遍历 data_folder_path 下的所有子文件夹，评估每个 CSV 文件并保存结果到 results_folder_path。
     """
@@ -200,23 +205,27 @@ def batch_evaluate(data_folder_path,
             evaluate_model(data_dir,
                            model_path,
                            current_results_dir,
+                           hidden_states_save_dir=hidden_state_save_dir,
                            model_type=model_type,
                            sequence_length=sequence_length,
                            input_size=input_size,
                            hidden_size=hidden_size,
                            num_layers=num_layers,
                            output_size=output_size,
-                           batch_size=batch_size)
+                           batch_size=batch_size,
+                           is_save_hidden_state=is_save_hidden_state)
 
     print("所有文件评估完成。")
 
 
 if __name__ == "__main__":
-    # batch_evaluate(data_folder_path="../data/sub",
-    #                model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
-    #                results_folder_path="../results/csv/sub", )
-
-    evaluate_model(data_dir="../data/240_rule/df_test_combine.csv",
+    batch_evaluate(data_folder_path="../data/sub/yuanwen",
                    model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
-                   results_dir="../results",
-                   hidden_states_save_dir="../hidden")
+                   results_folder_path="../results/csv/sub/yuanwen",
+                   hidden_state_save_dir="../hidden",
+                   is_save_hidden_state=0)
+
+    # evaluate_model(data_dir="../data/240_rule/df_test_combine_100.csv",
+    #                model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
+    #                results_dir="../results",
+    #                hidden_states_save_dir="../hidden")

@@ -23,7 +23,8 @@ def signed_angle_diff(angle1,
 def paint_table(csv_path,
                 save_path="../results/png",
                 save_name="CP_100",
-                trail_type="CP", ):
+                trail_type="CP",
+                is_show=0,):
     # 读取 CSV 文件
     data = pd.read_csv(csv_path)
 
@@ -35,30 +36,30 @@ def paint_table(csv_path,
     plt.figure(figsize=(12, 6))
 
     # 绘制 distMean_true 和 outcome_pre 作为线
-    plt.plot(trials, data['distMean_true'], label='Cannon', color='blue', linewidth=2)
-    plt.plot(trials, data['outcome_pre'], label='prediction_position', color='orange', linewidth=2)
+    plt.plot(trials, data['distMean'], label='Cannon', color='blue', linewidth=2)
+    plt.plot(trials, data['pred'], label='prediction_position', color='orange', linewidth=2)
 
     # 绘制 outcome_true 作为点
     if trail_type == "CP":
-        plt.scatter(trials, data['outcome_true'], label='Cannonball', color='red', marker='o', s=50)
+        plt.scatter(trials, data['outcome'], label='Cannonball', color='red', marker='o', s=50)
     elif trail_type == "OB":
         oddball_label_added = False  # 用于控制只设置一次标签
         normal_label_added = False
         for i in trials:
             if data['is_oddball'].iloc[i] == 1:
                 if not oddball_label_added:
-                    plt.scatter(i, data['outcome_true'].iloc[i], color='green', marker='o', s=50,
+                    plt.scatter(i, data['outcome'].iloc[i], color='green', marker='o', s=50,
                                 label='Cannonball (oddball)')
                     oddball_label_added = True  # 标记已添加过标签
                 else:
-                    plt.scatter(i, data['outcome_true'].iloc[i], color='green', marker='o', s=50)
+                    plt.scatter(i, data['outcome'].iloc[i], color='green', marker='o', s=50)
             else:
                 if not normal_label_added:
-                    plt.scatter(i, data['outcome_true'].iloc[i], color='red', marker='o', s=50,
+                    plt.scatter(i, data['outcome'].iloc[i], color='red', marker='o', s=50,
                                 label='Cannonball (normal)')
                     normal_label_added = True  # 标记已添加过标签
                 else:
-                    plt.scatter(i, data['outcome_true'].iloc[i], color='red', marker='o', s=50)
+                    plt.scatter(i, data['outcome'].iloc[i], color='red', marker='o', s=50)
 
     # 添加标签和标题
     plt.xlabel(f'Trial (0 to {data_len})')
@@ -73,7 +74,8 @@ def paint_table(csv_path,
     image_file_path = os.path.join(save_path, f"{save_name}.png")  # 设置图像文件名
     plt.savefig(image_file_path)
 
-    plt.show()
+    if is_show == 1:
+        plt.show()
 
 
 def paint_2C_figure(file_path,
@@ -217,7 +219,8 @@ def paint_2C_combined_figure(file_path_1,
                              csv_save_name="combined_difference_output",
                              png_save_path="../results/png/2C",
                              png_save_name="combined_difference_output",
-                             is_nihe=0, ):
+                             is_nihe=0,
+                             is_show=0,):
     # 设置字体，以支持中文字符
     plt.rcParams['font.family'] = 'SimHei'  # 使用黑体字体
     plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
@@ -231,6 +234,7 @@ def paint_2C_combined_figure(file_path_1,
     distMean1 = df1['distMean']
     outcome_true_1 = df1['outcome']
     outcome_pre_1 = df1['pred']
+    # 将数据都向上移动一位
     outcome_pre_shifted_1 = outcome_pre_1.shift(-1)
 
     distMean2 = df2['distMean']
@@ -238,36 +242,41 @@ def paint_2C_combined_figure(file_path_1,
     outcome_pre_2 = df2['pred']
     outcome_pre_shifted_2 = outcome_pre_2.shift(-1)
 
+    outcome_pre_shifted_1_rad = np.deg2rad(outcome_pre_shifted_1)
+    outcome_true_1_rad = np.deg2rad(outcome_true_1)
+    outcome_pre_shifted_2_rad = np.deg2rad(outcome_pre_shifted_2)
+    outcome_true_2_rad = np.deg2rad(outcome_true_2)
+
     # 计算 signed_diff
-    signed_diffs_true_1 = [signed_angle_diff(outcome_true_1[i - 1], outcome_true_1[i]) for i in
+    signed_diffs_true_1 = [circ_dist(outcome_pre_shifted_1_rad[i - 1], outcome_true_1_rad[i]) for i in
                            range(1, len(outcome_true_1))]
     signed_diffs_true_1.insert(0, None)  # 插入 None
 
-    signed_diffs_pre_1 = [signed_angle_diff(outcome_pre_shifted_1[i - 1], outcome_pre_shifted_1[i]) for i in
+    signed_diffs_pre_1 = [circ_dist(outcome_pre_shifted_1_rad[i - 1], outcome_pre_shifted_1_rad[i]) for i in
                           range(1, len(outcome_pre_shifted_1))]
     signed_diffs_pre_1.insert(0, None)  # 插入 None
 
-    signed_diffs_true_2 = [signed_angle_diff(outcome_true_2[i - 1], outcome_true_2[i]) for i in
+    signed_diffs_true_2 = [circ_dist(outcome_pre_shifted_2_rad[i - 1], outcome_true_2_rad[i]) for i in
                            range(1, len(outcome_true_2))]
     signed_diffs_true_2.insert(0, None)  # 插入 None
 
-    signed_diffs_pre_2 = [signed_angle_diff(outcome_pre_shifted_2[i - 1], outcome_pre_shifted_2[i]) for i in
+    signed_diffs_pre_2 = [circ_dist(outcome_pre_shifted_2_rad[i - 1], outcome_pre_shifted_2_rad[i]) for i in
                           range(1, len(outcome_pre_shifted_2))]
     signed_diffs_pre_2.insert(0, None)  # 插入 None
 
-    # 调整 signed_diffs_pre_1 的符号，使其与 signed_diffs_true_1 符号一致
-    for i in range(1, len(signed_diffs_true_1)):
-        if signed_diffs_true_1[i] is not None and signed_diffs_pre_1[i] is not None:
-            # 检查符号是否一致，如果不一致则调整
-            if (signed_diffs_true_1[i] >= 0 and signed_diffs_pre_1[i] < 0) or (
-                    signed_diffs_true_1[i] < 0 and signed_diffs_pre_1[i] >= 0):
-                signed_diffs_pre_1[i] *= -1  # 反转符号
-
-    for i in range(1, len(signed_diffs_true_2)):
-        if signed_diffs_true_2[i] is not None and signed_diffs_pre_2[i] is not None:
-            if (signed_diffs_true_2[i] >= 0 and signed_diffs_pre_2[i] < 0) or (
-                    signed_diffs_true_2[i] < 0 and signed_diffs_pre_2[i] >= 0):
-                signed_diffs_pre_2[i] *= -1  # 反转符号
+    # # 调整 signed_diffs_pre_1 的符号，使其与 signed_diffs_true_1 符号一致
+    # for i in range(1, len(signed_diffs_true_1)):
+    #     if signed_diffs_true_1[i] is not None and signed_diffs_pre_1[i] is not None:
+    #         # 检查符号是否一致，如果不一致则调整
+    #         if (signed_diffs_true_1[i] >= 0 and signed_diffs_pre_1[i] < 0) or (
+    #                 signed_diffs_true_1[i] < 0 and signed_diffs_pre_1[i] >= 0):
+    #             signed_diffs_pre_1[i] *= -1  # 反转符号
+    #
+    # for i in range(1, len(signed_diffs_true_2)):
+    #     if signed_diffs_true_2[i] is not None and signed_diffs_pre_2[i] is not None:
+    #         if (signed_diffs_true_2[i] >= 0 and signed_diffs_pre_2[i] < 0) or (
+    #                 signed_diffs_true_2[i] < 0 and signed_diffs_pre_2[i] >= 0):
+    #             signed_diffs_pre_2[i] *= -1  # 反转符号
 
     # 创建散点图
     plt.figure(figsize=(10, 6))  # 设置图形大小
@@ -305,8 +314,8 @@ def paint_2C_combined_figure(file_path_1,
             plt.plot(x_fit2, y_fit2, color='orange', label='Fit Line CP')
 
     # 设置横坐标和纵坐标的范围
-    plt.xlim(-180, 180)
-    plt.ylim(-180, 180)
+    plt.xlim(-3, 3)
+    plt.ylim(-3, 3)
 
     # 添加水平黑色虚线
     plt.axhline(0, color='black', linestyle='--')
@@ -326,14 +335,21 @@ def paint_2C_combined_figure(file_path_1,
     # 保存图形到指定路径
     plt.savefig(image_file_path)
 
-    # 显示图形
-    plt.show()
+    if is_show == 1:
+        # 显示图形
+        plt.show()
 
 
-def batch_combined_figure(folder_path, figure_type, save_path):
+def batch_generate_figure(folder_path,
+                          figure_type,
+                          save_path,
+                          figure_mode="combine",
+                          is_show=0,):
     """
     遍历文件夹中的每个子文件夹，调用 paint_2C_combined_figure 函数进行处理
 
+    :param is_show: 生成图像后是否显示，0-不显示，1-显示
+    :param figure_mode: 选择图片模式，"single"-CP和OB分别的折线图，"combine"-合并的UP-PE图
     :param folder_path: 文件夹路径
     :param figure_type: str，决定PNG文件命名的类型，可以是 "model" 或 "sub"
     :param save_path: str，PNG文件保存的主路径
@@ -359,15 +375,41 @@ def batch_combined_figure(folder_path, figure_type, save_path):
         # 确保子文件夹存在，若不存在则创建
         os.makedirs(png_save_path, exist_ok=True)  # 创建目录
 
-        if figure_type == "model":
-            png_save_name = f"model_{subfolder_name}"  # 使用 "model_" 前缀
-        elif figure_type == "sub":
-            png_save_name = f"sub_{subfolder_name}"  # 使用 "sub_" 前缀
-        else:
-            raise ValueError("figure_type 必须是 'model' 或 'sub'")
+        if figure_mode == "combine":
+            if figure_type == "model":
+                png_save_name = f"model_{subfolder_name}_{figure_mode}"  # 使用 "model_" 前缀
+            elif figure_type == "sub":
+                png_save_name = f"sub_{subfolder_name}_{figure_mode}"  # 使用 "sub_" 前缀
+            else:
+                raise ValueError("figure_type 必须是 'model' 或 'sub'")
+            # 调用绘图函数
+            paint_2C_combined_figure(file_path_1, file_path_2, png_save_path=png_save_path, png_save_name=png_save_name, is_show=is_show)
+        elif figure_mode == "single":
+            if figure_type == "model":
+                png_save_name1 = f"model_{subfolder_name}_{figure_mode}_CP"  # 使用 "model_" 前缀
+                png_save_name2 = f"model_{subfolder_name}_{figure_mode}_OB"  # 使用 "model_" 前缀
+            elif figure_type == "sub":
+                png_save_name1 = f"sub_{subfolder_name}_{figure_mode}_CP"  # 使用 "sub_" 前缀
+                png_save_name2 = f"sub_{subfolder_name}_{figure_mode}_OB"  # 使用 "sub_" 前缀
+            else:
+                raise ValueError("figure_type 必须是 'model' 或 'sub'")
 
-        # 调用绘图函数
-        paint_2C_combined_figure(file_path_1, file_path_2, png_save_path=png_save_path, png_save_name=png_save_name)
+            paint_table(csv_path=file_path_1,
+                        save_name=png_save_name1,
+                        save_path=png_save_path,
+                        trail_type="CP",
+                        is_show=is_show,)
+
+            paint_table(csv_path=file_path_2,
+                        save_name=png_save_name2,
+                        save_path=png_save_path,
+                        trail_type="OB",
+                        is_show=is_show)
+
+
+def circ_dist(a, b):
+    """Compute circular distance between two angles in radians."""
+    return np.arctan2(np.sin(a - b), np.cos(a - b))
 
 
 if __name__ == "__main__":
@@ -400,6 +442,8 @@ if __name__ == "__main__":
     #     png_save_name="CP_OB_403",
     #     is_nihe=0)
 
-    batch_combined_figure(folder_path="../data/sub/pa",
+    batch_generate_figure(folder_path="../data/sub/hc",
                           figure_type="sub",
-                          save_path="../results/png/sub/pa")
+                          save_path="../results/png/sub/hc",
+                          figure_mode="single",
+                          is_show=0,)

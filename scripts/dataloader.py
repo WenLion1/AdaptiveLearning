@@ -370,7 +370,7 @@ if __name__ == "__main__":
     #                                       trail_type="combine")
     # df_valid_combine = generate_outcome_angle(df_valid_combine,
     #                                           trail_type="combine", )
-    df_test_combine = generate_dist_mean(all_n_trail=240000,
+    df_test_combine = generate_dist_mean(all_n_trail=24000,
                                          trail_type="combine")
     df_test_combine = generate_outcome_angle(df_test_combine,
                                              trail_type="combine", )
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     #
     # df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine.csv'), index=False)
     # df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine.csv'), index=False)
-    df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine.csv'), index=False)
+    df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine_100.csv'), index=False)
 
     # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
     # #
