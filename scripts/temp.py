@@ -1,13 +1,25 @@
-def signed_angle_diff(angle1, angle2):
-    # 计算顺时针和逆时针的角度差
-    diff = (angle2 - angle1) % 360  # 计算模360后的差值
-    # 如果差值大于180，使用逆时针的差值
-    if diff > 180:
-        diff -= 360
-    return diff
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import vonmises
 
-# 示例
-angle1 = 400
-angle2 = 10
-result = signed_angle_diff(angle1, angle2)
-print(f"The signed angle difference between {angle1}° and {angle2}° is {result}°.")
+# 设置 von Mises 分布的参数
+kappa = 1/0.17**2  # 集中度参数，类似于高斯分布的 1/σ^2
+mean = 0   # 均值
+
+# 生成角度数据
+initial_input = np.linspace(0, 2*np.pi, 361)  # 从 0 到 2π，包含 361 个点
+
+# 生成 von Mises 分布的数据
+y = vonmises.pdf(initial_input, kappa, loc=mean)
+
+# 标准化 y
+y /= np.sum(y)
+
+# 绘制 von Mises 分布曲线
+plt.plot(initial_input, y, label='Von Mises Distribution')
+plt.title('Normalized Von Mises Distribution')
+plt.xlabel('Angle (radians)')
+plt.ylabel('Normalized Probability Density')
+plt.grid(True)
+plt.legend()
+plt.show()

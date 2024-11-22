@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from scripts.dataloader import generate_dataset
-from scripts.model import perceptual_network
+from scripts.model import perceptual_network, perceptual_network_vm
 from scripts.utils import determine_training_stops
 
 torch.manual_seed(20010509)
@@ -27,12 +27,12 @@ def evaluate_model(data_dir,
                    hidden_states_save_dir="../hidden",
                    model_type="lstm",
                    sequence_length=240,
-                   input_size=10,
+                   input_size=489,
                    hidden_size=1024,
                    num_layers=3,
                    output_size=2,
                    batch_size=1,
-                   is_save_hidden_state=0,):
+                   is_save_hidden_state=0, ):
     """
     评估预训练模型在提供的数据集上的表现。
 
@@ -144,7 +144,7 @@ def evaluate_model(data_dir,
     if is_save_hidden_state == 1:
         hidden_states = np.vstack(hidden_states)
         torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
-                                                    f"{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.pt"))
+                                                             f"{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.pt"))
 
     # 计算平均损失并打印
     average_loss = loss / len(dataloader_CP)
@@ -172,12 +172,12 @@ def batch_evaluate(data_folder_path,
                    hidden_state_save_dir="../hidden",
                    model_type="lstm",
                    sequence_length=240,
-                   input_size=10,
+                   input_size=489,
                    hidden_size=1024,
                    num_layers=3,
                    output_size=2,
                    batch_size=1,
-                   is_save_hidden_state=0,):
+                   is_save_hidden_state=0, ):
     """
     遍历 data_folder_path 下的所有子文件夹，评估每个 CSV 文件并保存结果到 results_folder_path。
     """
@@ -219,13 +219,17 @@ def batch_evaluate(data_folder_path,
 
 
 if __name__ == "__main__":
-    batch_evaluate(data_folder_path="../data/sub/yuanwen",
+    batch_evaluate(data_folder_path="../data/sub/hc",
                    model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
-                   results_folder_path="../results/csv/sub/yuanwen",
+                   results_folder_path="../results/csv/sub/hc",
                    hidden_state_save_dir="../hidden",
-                   is_save_hidden_state=0)
+                   is_save_hidden_state=0,
+                   num_layers=3,
+                   model_type="lstm",
+                   input_size=10, )
 
-    # evaluate_model(data_dir="../data/240_rule/df_test_combine_100.csv",
-    #                model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
+    # evaluate_model(data_dir="../data/240_rule/df_test_OB.csv",
+    #                model_path="../models/240_rule/19_16_39_lstm_layers_3_hidden_1024_input_489.h5",
     #                results_dir="../results",
-    #                hidden_states_save_dir="../hidden")
+    #                hidden_states_save_dir="../hidden",
+    #                is_save_hidden_state=1,)

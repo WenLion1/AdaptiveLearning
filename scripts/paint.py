@@ -24,7 +24,7 @@ def paint_table(csv_path,
                 save_path="../results/png",
                 save_name="CP_100",
                 trail_type="CP",
-                is_show=0,):
+                is_show=0, ):
     # 读取 CSV 文件
     data = pd.read_csv(csv_path)
 
@@ -220,7 +220,7 @@ def paint_2C_combined_figure(file_path_1,
                              png_save_path="../results/png/2C",
                              png_save_name="combined_difference_output",
                              is_nihe=0,
-                             is_show=0,):
+                             is_show=0, ):
     # 设置字体，以支持中文字符
     plt.rcParams['font.family'] = 'SimHei'  # 使用黑体字体
     plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
@@ -283,8 +283,8 @@ def paint_2C_combined_figure(file_path_1,
 
     # 调整 size_factor 的值并更改公式，使中心点的点更小
     size_factor = 30  # 调整大小因子，较之前小一些
-    sizes1 = size_factor * (1 + (np.abs(np.array(signed_diffs_true_1[20:])) / 180)) ** 2  # 用平方放大远离中心的点
-    sizes2 = size_factor * (1 + (np.abs(np.array(signed_diffs_true_2[20:])) / 180)) ** 2  # 用平方放大远离中心的点
+    sizes1 = size_factor * (1 + (np.abs(np.array(signed_diffs_true_1[20:])) / 180)) ** 5  # 用平方放大远离中心的点
+    sizes2 = size_factor * (1 + (np.abs(np.array(signed_diffs_true_2[20:])) / 180)) ** 5  # 用平方放大远离中心的点
 
     # 绘制第一个图的散点图
     plt.scatter(signed_diffs_true_1[20:], signed_diffs_pre_1[20:], alpha=0.7, color='orange',
@@ -314,8 +314,8 @@ def paint_2C_combined_figure(file_path_1,
             plt.plot(x_fit2, y_fit2, color='orange', label='Fit Line CP')
 
     # 设置横坐标和纵坐标的范围
-    plt.xlim(-3, 3)
-    plt.ylim(-3, 3)
+    plt.xlim(-3.2, 3.2)
+    plt.ylim(-3.2, 3.2)
 
     # 添加水平黑色虚线
     plt.axhline(0, color='black', linestyle='--')
@@ -344,7 +344,7 @@ def batch_generate_figure(folder_path,
                           figure_type,
                           save_path,
                           figure_mode="combine",
-                          is_show=0,):
+                          is_show=0, ):
     """
     遍历文件夹中的每个子文件夹，调用 paint_2C_combined_figure 函数进行处理
 
@@ -360,9 +360,12 @@ def batch_generate_figure(folder_path,
         # 筛选出两个 CSV 文件
         csv_files = [f for f in files if f.endswith('.csv')]
 
-        if len(csv_files) != 2:
+        if len(csv_files) < 2:
             print(f"在文件夹 {subdir} 中找不到两个 CSV 文件，跳过该文件夹。")
-            continue  # 如果不是两个文件，跳过此子文件夹
+            continue  # 如果不是两个文件，跳过此子文件
+        elif len(csv_files) > 2:
+            print(f"在文件夹 {subdir} 中超过两个 CSV 文件，请重新确认需要画图的两个文件。")
+            continue
 
         # 获取文件路径
         file_path_1 = os.path.join(subdir, csv_files[0])
@@ -383,7 +386,8 @@ def batch_generate_figure(folder_path,
             else:
                 raise ValueError("figure_type 必须是 'model' 或 'sub'")
             # 调用绘图函数
-            paint_2C_combined_figure(file_path_1, file_path_2, png_save_path=png_save_path, png_save_name=png_save_name, is_show=is_show)
+            paint_2C_combined_figure(file_path_1, file_path_2, png_save_path=png_save_path, png_save_name=png_save_name,
+                                     is_show=is_show)
         elif figure_mode == "single":
             if figure_type == "model":
                 png_save_name1 = f"model_{subfolder_name}_{figure_mode}_CP"  # 使用 "model_" 前缀
@@ -398,7 +402,7 @@ def batch_generate_figure(folder_path,
                         save_name=png_save_name1,
                         save_path=png_save_path,
                         trail_type="CP",
-                        is_show=is_show,)
+                        is_show=is_show, )
 
             paint_table(csv_path=file_path_2,
                         save_name=png_save_name2,
@@ -410,6 +414,34 @@ def batch_generate_figure(folder_path,
 def circ_dist(a, b):
     """Compute circular distance between two angles in radians."""
     return np.arctan2(np.sin(a - b), np.cos(a - b))
+
+
+def delete_file(folder_path,
+                key="", ):
+    """
+    删除指定文件夹及其子文件夹内所有文件名包含key的文件。
+
+    :param folder_path: 文件夹路径
+    :param key: 删除关键字，如果位空则不删除
+    :return:
+    """
+
+    if not os.path.exists(folder_path):
+        print(f"文件夹路径'{folder_path}'不存在！")
+
+    if key == "":
+        print("未指定关键字，未删除任何文件。")
+
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if key in file:
+                file_path = os.path.join(root, file)
+
+                try:
+                    os.remove(file_path)
+                    print(f"已删除文件：{file_path}")
+                except Exception as e:
+                    print(f"删除文件{file}时出错：{e}")
 
 
 if __name__ == "__main__":
@@ -441,9 +473,11 @@ if __name__ == "__main__":
     #     png_save_path="../results/png/sub/403",
     #     png_save_name="CP_OB_403",
     #     is_nihe=0)
+    delete_file(folder_path="../results/csv/sub/hc",
+                key="19_16_39")
 
-    batch_generate_figure(folder_path="../data/sub/hc",
-                          figure_type="sub",
+    batch_generate_figure(folder_path="../results/csv/sub/hc",
+                          figure_type="model",
                           save_path="../results/png/sub/hc",
-                          figure_mode="single",
-                          is_show=0,)
+                          figure_mode="combine",
+                          is_show=1, )

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from scripts.dataloader import generate_dataset
-from scripts.model import perceptual_network, CNN
+from scripts.model import perceptual_network, CNN, perceptual_network_vm
 from scripts.utils import determine_training_stops
 
 torch.manual_seed(20010509)
@@ -29,7 +29,6 @@ def fit_one_cycle(network,
                   idx_epoch=0,
                   train=True,
                   sequence_length=100, ):
-
     """
     一次训练或者验证过程
 
@@ -217,10 +216,10 @@ if __name__ == "__main__":
     n_epoch = 1000
 
     # 模型参数
-    model_name = "lstm"
-    input_size = 10
+    model_name = "rnn"
+    input_size = 489
     hidden_size = 1024
-    num_layers = 3
+    num_layers = 1
     output_size = 2
     batch_size = 1
     sequence_length = 240
@@ -255,12 +254,12 @@ if __name__ == "__main__":
                                   shuffle=False, )
 
     # build models
-    network = perceptual_network(device=device,
-                                 input_size=input_size,
-                                 hidden_size=hidden_size,
-                                 output_size=output_size,
-                                 num_layers=num_layers,
-                                 model_name=model_name, ).to(device)
+    network = perceptual_network_vm(device=device,
+                                    input_size=input_size,
+                                    hidden_size=hidden_size,
+                                    output_size=output_size,
+                                    num_layers=num_layers,
+                                    model_name=model_name, ).to(device)
 
     # 定义优化器
     optimizer = torch.optim.Adam(params=network.parameters(),

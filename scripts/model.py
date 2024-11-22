@@ -2,8 +2,9 @@ import math
 
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from torch import nn
-
+from scipy.stats import vonmises
 from util.dataloader_util import draw_image
 from util.utils_deep import concatenate_transform_steps
 
@@ -87,9 +88,9 @@ class perceptual_network_with_image(nn.Module):
                                   batch_first=self.batch_first, ).to(self.device)
         self.fc = nn.Linear(self.hidden_size, self.output_size).to(self.device)
         self.fc_rule = nn.Linear(1, 1023).to(self.device)
+        self.cnn = CNN()
 
-    def forward(self, angle, rule):
-
+    def forward(self, image, rule):
         rule_input = self.fc_rule(rule)
 
         # 将 image 张量的形状从 [1, 1024] 调整为 [1, 1, 1024]
@@ -134,7 +135,6 @@ class perceptual_network(nn.Module):
         self.fc_rule = nn.Linear(1, 8).to(self.device)
 
     def forward(self, angle, rule):
-
         angles_rad = np.radians(angle.cpu().numpy())
         sin = torch.tensor(np.sin(angles_rad)).to(self.device)
         cos = torch.tensor(np.cos(angles_rad)).to(self.device)
@@ -167,6 +167,57 @@ class perceptual_network(nn.Module):
         return outcome_pre, out
 
 
+class perceptual_network_vm(nn.Module):
+    def __init__(self,
+                 device='cpu',
+                 input_size=489,
+                 hidden_size=361,
+                 num_layers=1,
+                 batch_first=True,
+                 output_size=1,
+                 model_name="rnn",
+                 sigma=0.1745, ):
+        super(perceptual_network_vm, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.batch_first = batch_first
+        self.output_size = output_size
+        self.model_name = model_name
+        self.device = device
+        self.sigma = sigma
+        self.kappa = 1 / self.sigma**2
+
+        self.network = model_type(model_name=self.model_name,
+                                  input_size=self.input_size,
+                                  hidden_size=self.hidden_size,
+                                  num_layers=self.num_layers,
+                                  batch_first=self.batch_first, ).to(self.device)
+        self.fc = nn.Linear(self.hidden_size, self.output_size).to(self.device)
+        self.fc_rule = nn.Linear(1, 128).to(self.device)
+
+    def forward(self, angle, rule):
+        angle_radians = np.deg2rad(angle.cpu())
+        initial_input = np.arange(0, 361)
+        initial_input = initial_input * (np.pi / 180)
+        angle_input = torch.zeros((angle_radians.shape[1], 361))
+        for i in range(angle_radians.shape[1]):
+            mu = angle_radians[0][i][0]
+            vonmises_pdf = torch.from_numpy(vonmises.pdf(initial_input, self.kappa, loc=mu)).float()
+
+            angle_input[i] = vonmises_pdf
+
+        rule_input = self.fc_rule(rule)
+        angle_input = angle_input.unsqueeze(0)
+        combined = torch.cat((rule_input.to(self.device), angle_input.to(self.device)), dim=2)
+
+        out, hn = self.network(combined)
+        # out = self.fc(out[:, -1, :])
+
+        outcome_pre = self.fc(out)
+        return outcome_pre, out
+
+
 if __name__ == "__main__":
     # transform_steps = concatenate_transform_steps(image_resize=256,
     #                                               fill_empty_space=255,
@@ -179,5 +230,5 @@ if __name__ == "__main__":
     rule = torch.tensor([[[1.], [0.], [1], [0]]])
     angle = torch.tensor([[[30.], [45.], [60.], [120.]]])
 
-    model = perceptual_network(input_size=1024)
+    model = perceptual_network_vm(input_size=360)
     out, _ = model(angle, rule)
