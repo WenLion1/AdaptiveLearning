@@ -212,6 +212,10 @@ class perceptual_network_vm(nn.Module):
         combined = torch.cat((rule_input.to(self.device), angle_input.to(self.device)), dim=2)
 
         out, hn = self.network(combined)
+        print("out: ", out)
+        print("---------------")
+        print("hn: ", hn)
+
         # out = self.fc(out[:, -1, :])
 
         outcome_pre = self.fc(out)
@@ -230,5 +234,5 @@ if __name__ == "__main__":
     rule = torch.tensor([[[1.], [0.], [1], [0]]])
     angle = torch.tensor([[[30.], [45.], [60.], [120.]]])
 
-    model = perceptual_network_vm(input_size=360)
+    model = perceptual_network_vm(input_size=489)
     out, _ = model(angle, rule)
