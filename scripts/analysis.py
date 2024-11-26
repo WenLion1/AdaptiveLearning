@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy.stats import ttest_ind
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
@@ -84,13 +84,6 @@ def svm_hidden_states(hidden_states_dir, test_size=0.2):
     # print(f"F1得分: {f1:.4f}")
 
 
-import torch
-import pandas as pd
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-
-
 def svm_hidden_states_singlepoint(hidden_states_dir,
                                   label_csv,
                                   type="CP", ):
@@ -140,20 +133,25 @@ def svm_hidden_states_singlepoint(hidden_states_dir,
     # 可以选择在交叉验证的每一折中分别计算，但这需要手动实现交叉验证的逻辑
 
 
-def hidden_state_trajectories_pca(hidden_states_dir,
-                                  test_csv="",
-                                  type="CP",
-                                  save_path=None):
+def plot_hidden_state_trajectories(hidden_states_dir,
+                                   test_csv="",
+                                   reduction_type="PCA",
+                                   dimensions=3,
+                                   test_type="CP",
+                                   highlight_points=False,
+                                   save_path=None):
     """
-    画hidden_state在3维的运动轨迹，并保存动画
+    绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并保存动画。
 
     :param hidden_states_dir: 隐藏层存储地址
-    :param test_csv: rnn再哪个csv数据集下跑的
-    :param type: 此次test的类型，CP or OB
-    :param save_path: 动画保存路径（.gif 或 .mp4）
-    :return:
+    :param test_csv: RNN 测试时使用的 CSV 数据集
+    :param reduction_type: 降维方法 ("PCA" 或 "MDS")
+    :param dimensions: 降维到的维度 (2 或 3)
+    :param test_type: 测试类型 ("CP" 或 "OB")
+    :param highlight_points: 是否标记 changepoint 或 oddball 点
+    :param save_path: 动画保存路径 (.gif 或 .mp4)
+    :return: None
     """
-    import pandas as pd
 
     # 加载隐藏层
     hidden_states = torch.load(hidden_states_dir).numpy()
@@ -161,445 +159,121 @@ def hidden_state_trajectories_pca(hidden_states_dir,
     # 加载测试数据集 CSV
     if test_csv:
         test_data = pd.read_csv(test_csv)
-        if type == "CP":
+        if test_type == "CP":
             highlight_col = "is_changepoint"
-        elif type == "OB":
+        elif test_type == "OB":
             highlight_col = "is_oddball"
         else:
-            raise ValueError("type 参数只能是 'CP' 或 'OB'")
-
-        # 找到需要高亮的时间点索引
+            raise ValueError("test_type 参数只能是 'CP' 或 'OB'")
         highlight_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
     else:
         highlight_indices = []
 
-    # 使用 PCA 降维到 3D
-    pca = PCA(n_components=3)
-    hidden_states_3d = pca.fit_transform(hidden_states)  # [240, 3]
+    # 降维
+    if reduction_type == "PCA":
+        reducer = PCA(n_components=dimensions)
+    elif reduction_type == "MDS":
+        reducer = MDS(n_components=dimensions, dissimilarity='euclidean', random_state=42)
+    else:
+        raise ValueError("reduction_type 参数只能是 'PCA' 或 'MDS'")
+    hidden_states_reduced = reducer.fit_transform(hidden_states)
 
-    # 获取 3D 坐标
-    x = hidden_states_3d[:, 0]
-    y = hidden_states_3d[:, 1]
-    z = hidden_states_3d[:, 2]
+    # 获取坐标
+    coords = [hidden_states_reduced[:, i] for i in range(dimensions)]
 
-    # 初始化 3D 图形
+    # 初始化图形
     fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # 设置固定坐标轴范围
-    x_min, x_max = x.min(), x.max()
-    y_min, y_max = y.min(), y.max()
-    z_min, z_max = z.min(), z.max()
-    ax.set_xlim3d(x_min, x_max)
-    ax.set_ylim3d(y_min, y_max)
-    ax.set_zlim3d(z_min, z_max)
-
-    # 初始状态
-    scatter = ax.scatter([], [], [], c=[], cmap='viridis', s=50, edgecolors='k')  # 仅绘制普通点
-    highlight_scatter = ax.scatter([], [], [], color='orange', s=100, edgecolors='k')  # 橙色点用于高亮
-
-    # 动画更新函数
-    def update(frame):
-        # 获取当前帧普通点索引，排除高亮点
-        normal_indices = np.setdiff1d(range(frame + 1), highlight_indices)
-
-        # 当前普通点
-        current_x = x[normal_indices]
-        current_y = y[normal_indices]
-        current_z = z[normal_indices]
-
-        # 更新普通点的位置和颜色
-        scatter._offsets3d = (current_x, current_y, current_z)
-        scatter.set_array(np.linspace(0, 1, len(normal_indices)))  # 动态更新颜色渐变
-
-        # 更新高亮点
-        highlight_x = x[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_y = y[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_z = z[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_scatter._offsets3d = (highlight_x, highlight_y, highlight_z)
-
-        return scatter, highlight_scatter
-
-    # 动画初始化函数
-    def init():
-        scatter._offsets3d = ([], [], [])
-        scatter.set_array([])
-        highlight_scatter._offsets3d = ([], [], [])
-        return scatter, highlight_scatter
-
-    # 创建动画
-    anim = FuncAnimation(fig, update, frames=len(x), init_func=init, blit=False, interval=100, repeat=False)
-
-    # 在动画完成后显示最后一帧
-    def on_animation_complete():
-        update(len(x) - 1)
-
-    anim._stop = on_animation_complete
-
-    # 如果指定了保存路径，则保存动画
-    if save_path:
-        print(f"Saving animation to {save_path}...")
-        if save_path.endswith(".gif"):
-            anim.save(save_path, writer="pillow", fps=10)
-        elif save_path.endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=10)
-        else:
-            raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
-
-    # 显示动画
-    plt.show()
-
-
-def hidden_state_trajectories_pca_2d(hidden_states_dir,
-                                     test_csv="",
-                                     type="CP",
-                                     save_path=None):
-    """
-    画hidden_state在2维的运动轨迹，并保存动画
-
-    :param hidden_states_dir: 隐藏层存储地址
-    :param test_csv: rnn在哪个csv数据集下跑的
-    :param type: 此次test的类型，CP or OB
-    :param save_path: 动画保存路径（.gif 或 .mp4）
-    :return:
-    """
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import FuncAnimation
-    import numpy as np
-    from sklearn.decomposition import PCA
-    import torch
-
-    # 加载隐藏层
-    hidden_states = torch.load(hidden_states_dir).numpy()
-
-    # 加载测试数据集 CSV
-    if test_csv:
-        test_data = pd.read_csv(test_csv)
-        if type == "CP":
-            highlight_col = "is_changepoint"
-        elif type == "OB":
-            highlight_col = "is_oddball"
-        else:
-            raise ValueError("type 参数只能是 'CP' 或 'OB'")
-
-        # 找到需要高亮的时间点索引
-        highlight_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
+    if dimensions == 3:
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_xlim(coords[0].min(), coords[0].max())
+        ax.set_ylim(coords[1].min(), coords[1].max())
+        ax.set_zlim(coords[2].min(), coords[2].max())
+    elif dimensions == 2:
+        ax = fig.add_subplot(111)
+        ax.set_xlim(coords[0].min(), coords[0].max())
+        ax.set_ylim(coords[1].min(), coords[1].max())
     else:
-        highlight_indices = []
+        raise ValueError("dimensions 参数只能是 2 或 3")
 
-    # 使用 PCA 降维到 2D
-    pca = PCA(n_components=2)
-    hidden_states_2d = pca.fit_transform(hidden_states)  # [240, 2]
+    scatter = ax.scatter([], [], c=[], cmap='viridis', s=50, edgecolors='k')
 
-    # 获取 2D 坐标
-    x = hidden_states_2d[:, 0]
-    y = hidden_states_2d[:, 1]
-
-    # 初始化 2D 图形
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    # 设置固定坐标轴范围
-    x_min, x_max = x.min(), x.max()
-    y_min, y_max = y.min(), y.max()
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
-    ax.set_title("Hidden State Trajectories (2D)", fontsize=16)
-    ax.set_xlabel("PCA Dim 1")
-    ax.set_ylabel("PCA Dim 2")
-
-    # 初始状态
-    scatter = ax.scatter([], [], c=[], cmap='viridis', s=50, edgecolors='k')  # 普通点
-    highlight_scatter = ax.scatter([], [], color='orange', s=100, edgecolors='k')  # 高亮点
-
-    # 动画更新函数
-    def update(frame):
-        # 获取当前帧普通点索引，排除高亮点
-        normal_indices = np.setdiff1d(range(frame + 1), highlight_indices)
-
-        # 当前普通点
-        current_x = x[normal_indices]
-        current_y = y[normal_indices]
-
-        # 更新普通点的位置和颜色
-        scatter.set_offsets(np.c_[current_x, current_y])
-        scatter.set_array(np.linspace(0, 1, len(normal_indices)))  # 动态更新颜色渐变
-
-        # 更新高亮点
-        highlight_x = x[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_y = y[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_scatter.set_offsets(np.c_[highlight_x, highlight_y])
-
-        return scatter, highlight_scatter
-
-    # 动画初始化函数
-    def init():
-        scatter.set_offsets(np.empty((0, 2)))  # 修复错误：提供一个形状为 (0, 2) 的空数组
-        scatter.set_array([])
-        highlight_scatter.set_offsets(np.empty((0, 2)))  # 同样提供空数组
-        return scatter, highlight_scatter
-
-    # 创建动画
-    anim = FuncAnimation(fig, update, frames=len(x), init_func=init, blit=False, interval=100, repeat=False)
-
-    # 如果指定了保存路径，则保存动画
-    if save_path:
-        print(f"Saving animation to {save_path}...")
-        if save_path.endswith(".gif"):
-            anim.save(save_path, writer="pillow", fps=10)
-        elif save_path.endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=10)
-        else:
-            raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
-
-    # 显示动画
-    plt.show()
-
-
-def hidden_state_trajectories_mds(hidden_states_dir,
-                                  test_csv="",
-                                  save_path=None,
-                                  type="CP"):
-    """
-    画hidden_state在3维的运动轨迹，并保存动画（使用MDS方法降维）
-
-    :param hidden_states_dir: 隐藏层存储地址
-    :param test_csv: rnn在哪个csv数据集下跑的
-    :param type: 此次test的类型，CP or OB
-    :param save_path: 动画保存路径（.gif 或 .mp4）
-    :return:
-    """
-    import pandas as pd
-    from sklearn.manifold import MDS
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import FuncAnimation
-    import torch
-    from mpl_toolkits.mplot3d.art3d import Line3DCollection
-
-    # 加载隐藏层
-    hidden_states = torch.load(hidden_states_dir).numpy()
-
-    # 加载测试数据集 CSV
-    if test_csv:
-        test_data = pd.read_csv(test_csv)
-        if type == "CP":
-            highlight_col = "is_changepoint"
-            highlight_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
-            blue_indices = []  # CP 情况下没有蓝色点
-        elif type == "OB":
-            highlight_col = "is_oddball"
-            oddball_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
-            highlight_indices = oddball_indices
-
-            # 蓝色点：is_oddball 为 1 的下一个时间点
-            blue_indices = (oddball_indices + 1)[oddball_indices + 1 < len(test_data)]
-        else:
-            raise ValueError("type 参数只能是 'CP' 或 'OB'")
+    if highlight_points:
+        highlight_scatter = ax.scatter([], [], color='orange', s=100, edgecolors='k')
     else:
-        highlight_indices = []
-        blue_indices = []
+        highlight_scatter = None
 
-    # 使用 MDS 降维到 3D
-    mds = MDS(n_components=3, dissimilarity='euclidean', random_state=42)
-    hidden_states_3d = mds.fit_transform(hidden_states)
-
-    # 获取 3D 坐标
-    x = hidden_states_3d[:, 0]
-    y = hidden_states_3d[:, 1]
-    z = hidden_states_3d[:, 2]
-
-    # 初始化 3D 图形
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # 设置固定坐标轴范围
-    x_min, x_max = x.min(), x.max()
-    y_min, y_max = y.min(), y.max()
-    z_min, z_max = z.min(), z.max()
-    ax.set_xlim3d(x_min, x_max)
-    ax.set_ylim3d(y_min, y_max)
-    ax.set_zlim3d(z_min, z_max)
-
-    # 初始状态
-    scatter = ax.scatter([], [], [], c=[], cmap='viridis', s=50, edgecolors='k')  # 普通点
-    highlight_scatter = ax.scatter([], [], [], color='orange', s=100, edgecolors='k')  # 橙色点
-    blue_scatter = ax.scatter([], [], [], color='blue', s=100, edgecolors='k')  # 蓝色点
-
-    # 动态连线
-    lines = Line3DCollection([], colors='blue', linestyles='--', lw=2)
-    ax.add_collection3d(lines)
+    # 动态连线列表
+    lines = []
 
     # 动画更新函数
     def update(frame):
-        # 获取当前帧蓝色点及橙色点索引
-        if frame in blue_indices:
-            scatter._offsets3d = ([], [], [])  # 隐藏普通点
-        else:
-            normal_indices = np.setdiff1d(range(frame + 1), highlight_indices)
-            scatter._offsets3d = (x[normal_indices], y[normal_indices], z[normal_indices])
-            scatter.set_array(np.linspace(0, 1, len(normal_indices)))
+        indices = np.arange(frame + 1)
+        normal_indices = np.setdiff1d(indices, highlight_indices)
 
-        # 更新高亮点
-        highlight_x = x[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_y = y[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_z = z[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_scatter._offsets3d = (highlight_x, highlight_y, highlight_z)
+        # 颜色随时间变化
+        colors = np.linspace(0, 1, len(normal_indices)) ** (frame / len(coords[0]))  # 颜色随帧数加深
 
-        # 更新蓝色点
-        blue_x = x[np.intersect1d(blue_indices, range(frame + 1))]
-        blue_y = y[np.intersect1d(blue_indices, range(frame + 1))]
-        blue_z = z[np.intersect1d(blue_indices, range(frame + 1))]
-        blue_scatter._offsets3d = (blue_x, blue_y, blue_z)
+        if dimensions == 3:
+            scatter._offsets3d = (coords[0][normal_indices], coords[1][normal_indices], coords[2][normal_indices])
+            scatter.set_array(colors)  # 设置颜色数组
 
-        # 更新连线
-        if len(highlight_x) > 0 and len(blue_x) > 0:
-            segments = [[(highlight_x[-1], highlight_y[-1], highlight_z[-1]),
-                         (blue_x[-1], blue_y[-1], blue_z[-1])]]
-            lines.set_segments(segments)
-        else:
-            lines.set_segments([])
+            if highlight_points:
+                highlight_scatter._offsets3d = (
+                    coords[0][highlight_indices[highlight_indices <= frame]],
+                    coords[1][highlight_indices[highlight_indices <= frame]],
+                    coords[2][highlight_indices[highlight_indices <= frame]]
+                )
 
-        return scatter, highlight_scatter, blue_scatter, lines
+                # 绘制连线
+                for line in lines:
+                    line.remove()
+                lines.clear()
+                for idx in highlight_indices[highlight_indices <= frame]:
+                    if idx + 1 < len(coords[0]):
+                        line, = ax.plot(
+                            [coords[0][idx], coords[0][idx + 1]],
+                            [coords[1][idx], coords[1][idx + 1]],
+                            [coords[2][idx], coords[2][idx + 1]],
+                            color='red', linestyle='--', linewidth=2
+                        )
+                        lines.append(line)
+            ax.view_init(elev=30, azim=frame % 360)
+        else:  # 2D
+            scatter.set_offsets(np.c_[coords[0][normal_indices], coords[1][normal_indices]])
+            scatter.set_array(colors)  # 设置颜色数组
 
-    # 动画初始化函数
+            if highlight_points:
+                highlight_scatter.set_offsets(
+                    np.c_[coords[0][highlight_indices[highlight_indices <= frame]],
+                    coords[1][highlight_indices[highlight_indices <= frame]]]
+                )
+
+                # 绘制连线
+                for line in lines:
+                    line.remove()
+                lines.clear()
+                for idx in highlight_indices[highlight_indices <= frame]:
+                    if idx + 1 < len(coords[0]):
+                        line, = ax.plot(
+                            [coords[0][idx], coords[0][idx + 1]],
+                            [coords[1][idx], coords[1][idx + 1]],
+                            color='red', linestyle='--', linewidth=2
+                        )
+                        lines.append(line)
+        return (scatter, highlight_scatter) if highlight_points else (scatter,)
+
     def init():
-        scatter._offsets3d = ([], [], [])
-        scatter.set_array([])
-        highlight_scatter._offsets3d = ([], [], [])
-        blue_scatter._offsets3d = ([], [], [])
-        lines.set_segments([])
-        return scatter, highlight_scatter, blue_scatter, lines
-
-    # 创建动画
-    anim = FuncAnimation(fig, update, frames=len(x), init_func=init, blit=False, interval=100, repeat=False)
-
-    # 如果指定了保存路径，则保存动画
-    if save_path:
-        print(f"Saving animation to {save_path}...")
-        if save_path.endswith(".gif"):
-            anim.save(save_path, writer="pillow", fps=10)
-        elif save_path.endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=10)
+        if dimensions == 3:
+            scatter._offsets3d = ([], [], [])
+            if highlight_points:
+                highlight_scatter._offsets3d = ([], [], [])
         else:
-            raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
+            scatter.set_offsets(np.empty((0, 2)))
+            if highlight_points:
+                highlight_scatter.set_offsets(np.empty((0, 2)))
+        return (scatter, highlight_scatter) if highlight_points else (scatter,)
 
-    # 显示动画
-    plt.show()
-
-
-def hidden_state_trajectories_mds_2d(hidden_states_dir,
-                                     test_csv="",
-                                     save_path=None,
-                                     type="CP"):
-    """
-    画hidden_state在2维的运动轨迹，并保存动画（使用MDS方法降维）
-
-    :param hidden_states_dir: 隐藏层存储地址
-    :param test_csv: rnn在哪个csv数据集下跑的
-    :param type: 此次test的类型，CP or OB
-    :param save_path: 动画保存路径（.gif 或 .mp4）
-    :return:
-    """
-    import pandas as pd
-    from sklearn.manifold import MDS
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import FuncAnimation
-    import torch
-    from matplotlib.lines import Line2D
-
-    # 加载隐藏层
-    hidden_states = torch.load(hidden_states_dir).numpy()
-
-    # 加载测试数据集 CSV
-    if test_csv:
-        test_data = pd.read_csv(test_csv)
-        if type == "CP":
-            highlight_col = "is_changepoint"
-            highlight_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
-            blue_indices = []  # CP 情况下没有蓝色点
-        elif type == "OB":
-            highlight_col = "is_oddball"
-            oddball_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
-            highlight_indices = oddball_indices
-
-            # 蓝色点：is_oddball 为 1 的下一个时间点
-            blue_indices = (oddball_indices + 1)[oddball_indices + 1 < len(test_data)]
-        else:
-            raise ValueError("type 参数只能是 'CP' 或 'OB'")
-    else:
-        highlight_indices = []
-        blue_indices = []
-
-    # 使用 MDS 降维到 2D
-    mds = MDS(n_components=2, dissimilarity='euclidean', random_state=42, normalized_stress="auto")
-    hidden_states_2d = mds.fit_transform(hidden_states)
-
-    # 获取 2D 坐标
-    x = hidden_states_2d[:, 0]
-    y = hidden_states_2d[:, 1]
-
-    # 初始化 2D 图形
-    fig, ax = plt.subplots(figsize=(10, 7))
-
-    # 设置固定坐标轴范围
-    x_min, x_max = x.min(), x.max()
-    y_min, y_max = y.min(), y.max()
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
-
-    # 初始状态
-    scatter = ax.scatter([], [], c=[], cmap='viridis', s=50, edgecolors='k')  # 普通点
-    highlight_scatter = ax.scatter([], [], color='orange', s=100, edgecolors='k')  # 高亮点
-    blue_scatter = ax.scatter([], [], color='blue', s=100, edgecolors='k')  # 蓝色点
-
-    # 动态连线
-    line = Line2D([], [], color='blue', linestyle='--', lw=2)
-    ax.add_line(line)
-
-    # 动画更新函数
-    def update(frame):
-        # 获取当前帧普通点索引，排除高亮点
-        normal_indices = np.setdiff1d(range(frame + 1), highlight_indices)
-
-        # 当前普通点
-        current_x = x[normal_indices]
-        current_y = y[normal_indices]
-
-        # 更新普通点的位置和颜色
-        scatter.set_offsets(np.c_[current_x, current_y])
-        scatter.set_array(np.linspace(0, 1, len(normal_indices)))  # 动态更新颜色渐变
-
-        # 更新高亮点
-        highlight_x = x[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_y = y[np.intersect1d(highlight_indices, range(frame + 1))]
-        highlight_scatter.set_offsets(np.c_[highlight_x, highlight_y])
-
-        # 更新蓝色点
-        blue_x = x[np.intersect1d(blue_indices, range(frame + 1))]
-        blue_y = y[np.intersect1d(blue_indices, range(frame + 1))]
-        blue_scatter.set_offsets(np.c_[blue_x, blue_y])
-
-        # 更新连线（连接橙色点与其蓝色点）
-        if len(highlight_x) > 0 and len(blue_x) > 0:
-            line.set_data([highlight_x[-1], blue_x[-1]], [highlight_y[-1], blue_y[-1]])
-        else:
-            line.set_data([], [])  # 如果没有点，则不绘制连线
-
-        return scatter, highlight_scatter, blue_scatter, line
-
-    # 动画初始化函数
-    def init():
-        scatter.set_offsets(np.empty((0, 2)))
-        scatter.set_array([])
-        highlight_scatter.set_offsets(np.empty((0, 2)))
-        blue_scatter.set_offsets(np.empty((0, 2)))
-        line.set_data([], [])
-        return scatter, highlight_scatter, blue_scatter, line
-
-    # 创建动画
-    anim = FuncAnimation(fig, update, frames=len(x), init_func=init, blit=False, interval=100, repeat=False)
+    anim = FuncAnimation(fig, update, frames=len(coords[0]), init_func=init, blit=False, interval=100, repeat=True)
 
     # 保存动画
     if save_path:
@@ -613,7 +287,6 @@ def hidden_state_trajectories_mds_2d(hidden_states_dir,
 
     # 显示动画
     plt.show()
-
 
 def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
                       changepoint_col="is_changepoint"):
@@ -690,6 +363,81 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     }
 
 
+def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
+    """
+    绘制 Oddball 和 Changepoint 的距离比较图，并标注 t 值和 p 值。
+
+    :param oddball_data: 包含 Oddball 数据的字典
+    :param changepoint_data: 包含 Changepoint 数据的字典
+    :param save_path: 图表保存路径，如果为 None 则直接显示图表
+    """
+    # 提取数据
+    labels = ["Oddball", "Changepoint"]
+    special_means = [
+        oddball_data["special_distances"]["mean"],
+        changepoint_data["special_distances"]["mean"]
+    ]
+    special_stds = [
+        oddball_data["special_distances"]["std"],
+        changepoint_data["special_distances"]["std"]
+    ]
+    normal_means = [
+        oddball_data["normal_distances"]["mean"],
+        changepoint_data["normal_distances"]["mean"]
+    ]
+    normal_stds = [
+        oddball_data["normal_distances"]["std"],
+        changepoint_data["normal_distances"]["std"]
+    ]
+    t_values = [
+        oddball_data["t_test"]["t_statistic"],
+        changepoint_data["t_test"]["t_statistic"]
+    ]
+    p_values = [
+        oddball_data["t_test"]["p_value"],
+        changepoint_data["t_test"]["p_value"]
+    ]
+
+    # 设置图形
+    x = np.arange(len(labels))  # x轴的位置
+    width = 0.35  # 柱状图宽度
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # 绘制柱状图
+    ax.bar(x - width / 2, special_means, width, yerr=special_stds, label="Special", color="orange", capsize=5)
+    ax.bar(x + width / 2, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
+
+    # 添加 t 值和 p 值
+    for i, label in enumerate(labels):
+        ax.text(
+            x[i], max(special_means[i] + special_stds[i], normal_means[i] + normal_stds[i]) + 0.1,
+            f"t={t_values[i]:.2f}\np={p_values[i]:.2e}",
+            ha="center", va="bottom", fontsize=10, color="black"
+        )
+
+    # 图表设置
+    ax.set_xlabel("Distance Type", fontsize=12)
+    ax.set_ylabel("Mean Distance", fontsize=12)
+    ax.set_title("Comparison of Special and Normal Distances", fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
+
+    # 坐标轴范围设置一致
+    max_y = max(
+        max(special_means[i] + special_stds[i], normal_means[i] + normal_stds[i]) for i in range(len(labels))
+    )
+    ax.set_ylim(0, max_y + 0.5)
+
+    # 保存或显示图表
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+        print(f"图表已保存至: {save_path}")
+    else:
+        plt.show()
+
+
 if __name__ == "__main__":
     # svm_hidden_states(hidden_states_dir="../hidden/6_19_43_layers_3_hidden_1024_input_10.pt")
 
@@ -704,6 +452,13 @@ if __name__ == "__main__":
     # hidden_state_trajectories_mds(hidden_states_dir="../hidden/23_11_6_layers_3_hidden_1024_input_489_sub_OB.pt",
     #                               test_csv="../data/sub/hc/404/ADL_B_404_DataOddball_404.csv",
     #                               type="OB", )
+    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/23_10_36_layers_3_hidden_1024_input_489_CP.pt",
+    #                                test_csv="../data/240_rule/df_test_CP.csv",
+    #                                test_type="CP",
+    #                                reduction_type="MDS",
+    #                                dimensions=2,
+    #                                highlight_points=True,
+    #                                save_path="../results/png/240_rule/df_test_CP/hidden_trajectories/mds_2_model.gif", )
 
     result_OB = compare_distances(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
                                   test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
@@ -713,3 +468,7 @@ if __name__ == "__main__":
                                   type="CP", )
     print("Oddball Distances:", result_OB)
     print("Changepoint Distances:", result_CP)
+
+    plot_distance_comparison(result_OB, 
+                             result_CP,
+                             save_path="../results/png/distance.png")
