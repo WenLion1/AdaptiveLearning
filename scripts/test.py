@@ -229,9 +229,9 @@ if __name__ == "__main__":
     #                model_type="lstm",
     #                input_size=10, )
 
-    evaluate_model(data_dir="../data/sub/hc/404/ADL_B_404_DataOddball_404.csv",
+    evaluate_model(data_dir="../data/sub/hc/403/combine_403.csv",
                    model_path="../models/240_rule/19_16_39_lstm_layers_3_hidden_1024_input_489.h5",
                    results_dir="../results",
                    hidden_states_save_dir="../hidden",
                    is_save_hidden_state=1,
-                   test_type="sub_OB",)
+                   test_type="combine",)

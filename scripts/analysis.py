@@ -1,10 +1,12 @@
 import random
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
+from matplotlib.colors import to_rgba
 from scipy.stats import ttest_ind
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
@@ -137,19 +139,17 @@ def plot_hidden_state_trajectories(hidden_states_dir,
                                    test_csv="",
                                    reduction_type="PCA",
                                    dimensions=3,
-                                   test_type="CP",
-                                   highlight_points=False,
+                                   plot_type="all",  # 新增参数: 'all', 'normal', 'special'
                                    save_path=None):
     """
-    绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并保存动画。
+    绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并染色和添加旋转动画。
 
     :param hidden_states_dir: 隐藏层存储地址
     :param test_csv: RNN 测试时使用的 CSV 数据集
     :param reduction_type: 降维方法 ("PCA" 或 "MDS")
     :param dimensions: 降维到的维度 (2 或 3)
-    :param test_type: 测试类型 ("CP" 或 "OB")
-    :param highlight_points: 是否标记 changepoint 或 oddball 点
-    :param save_path: 动画保存路径 (.gif 或 .mp4)
+    :param plot_type: 绘制点类型 ('all', 'normal', 'special')
+    :param save_path: 图像或动画保存路径 (.gif 或 .mp4)
     :return: None
     """
 
@@ -159,15 +159,23 @@ def plot_hidden_state_trajectories(hidden_states_dir,
     # 加载测试数据集 CSV
     if test_csv:
         test_data = pd.read_csv(test_csv)
-        if test_type == "CP":
-            highlight_col = "is_changepoint"
-        elif test_type == "OB":
-            highlight_col = "is_oddball"
+        is_cp = test_data["is_changepoint"]
+        is_ob = test_data["is_oddball"]
+
+        # 根据 plot_type 筛选点
+        if plot_type == "normal":
+            selected_indices = test_data.index[(is_cp == 0) & (is_ob == 0)].to_numpy()
+        elif plot_type == "special":
+            selected_indices = test_data.index[(is_cp == 1) | (is_ob == 1)].to_numpy()
+        elif plot_type == "all":
+            selected_indices = np.arange(len(hidden_states))
         else:
-            raise ValueError("test_type 参数只能是 'CP' 或 'OB'")
-        highlight_indices = test_data.index[test_data[highlight_col] == 1].to_numpy()
+            raise ValueError("plot_type 参数必须是 'all', 'normal', 或 'special'")
     else:
-        highlight_indices = []
+        selected_indices = np.arange(len(hidden_states))
+
+    # 筛选数据
+    hidden_states = hidden_states[selected_indices]
 
     # 降维
     if reduction_type == "PCA":
@@ -195,98 +203,41 @@ def plot_hidden_state_trajectories(hidden_states_dir,
     else:
         raise ValueError("dimensions 参数只能是 2 或 3")
 
-    scatter = ax.scatter([], [], c=[], cmap='viridis', s=50, edgecolors='k')
+    # 设置颜色
+    point_colors = ['#FF0000' if i in test_data.index[(is_cp == 1) | (is_ob == 1)]
+                    else '#808080' for i in selected_indices]
 
-    if highlight_points:
-        highlight_scatter = ax.scatter([], [], color='orange', s=100, edgecolors='k')
+    scatter = None
+    if dimensions == 3:
+        scatter = ax.scatter(coords[0], coords[1], coords[2], c=point_colors, s=50, edgecolors='k')
     else:
-        highlight_scatter = None
+        ax.scatter(coords[0], coords[1], c=point_colors, s=50, edgecolors='k')
 
-    # 动态连线列表
-    lines = []
+    # 添加图例
+    legend_elements = [
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF0000', markersize=10, label='CP / OB (Special)'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#808080', markersize=10, label='Normal'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
 
-    # 动画更新函数
-    def update(frame):
-        indices = np.arange(frame + 1)
-        normal_indices = np.setdiff1d(indices, highlight_indices)
-
-        # 颜色随时间变化
-        colors = np.linspace(0, 1, len(normal_indices)) ** (frame / len(coords[0]))  # 颜色随帧数加深
-
-        if dimensions == 3:
-            scatter._offsets3d = (coords[0][normal_indices], coords[1][normal_indices], coords[2][normal_indices])
-            scatter.set_array(colors)  # 设置颜色数组
-
-            if highlight_points:
-                highlight_scatter._offsets3d = (
-                    coords[0][highlight_indices[highlight_indices <= frame]],
-                    coords[1][highlight_indices[highlight_indices <= frame]],
-                    coords[2][highlight_indices[highlight_indices <= frame]]
-                )
-
-                # 绘制连线
-                for line in lines:
-                    line.remove()
-                lines.clear()
-                for idx in highlight_indices[highlight_indices <= frame]:
-                    if idx + 1 < len(coords[0]):
-                        line, = ax.plot(
-                            [coords[0][idx], coords[0][idx + 1]],
-                            [coords[1][idx], coords[1][idx + 1]],
-                            [coords[2][idx], coords[2][idx + 1]],
-                            color='red', linestyle='--', linewidth=2
-                        )
-                        lines.append(line)
-            ax.view_init(elev=30, azim=frame % 360)
-        else:  # 2D
-            scatter.set_offsets(np.c_[coords[0][normal_indices], coords[1][normal_indices]])
-            scatter.set_array(colors)  # 设置颜色数组
-
-            if highlight_points:
-                highlight_scatter.set_offsets(
-                    np.c_[coords[0][highlight_indices[highlight_indices <= frame]],
-                    coords[1][highlight_indices[highlight_indices <= frame]]]
-                )
-
-                # 绘制连线
-                for line in lines:
-                    line.remove()
-                lines.clear()
-                for idx in highlight_indices[highlight_indices <= frame]:
-                    if idx + 1 < len(coords[0]):
-                        line, = ax.plot(
-                            [coords[0][idx], coords[0][idx + 1]],
-                            [coords[1][idx], coords[1][idx + 1]],
-                            color='red', linestyle='--', linewidth=2
-                        )
-                        lines.append(line)
-        return (scatter, highlight_scatter) if highlight_points else (scatter,)
-
-    def init():
-        if dimensions == 3:
-            scatter._offsets3d = ([], [], [])
-            if highlight_points:
-                highlight_scatter._offsets3d = ([], [], [])
-        else:
-            scatter.set_offsets(np.empty((0, 2)))
-            if highlight_points:
-                highlight_scatter.set_offsets(np.empty((0, 2)))
-        return (scatter, highlight_scatter) if highlight_points else (scatter,)
-
-    anim = FuncAnimation(fig, update, frames=len(coords[0]), init_func=init, blit=False, interval=100, repeat=True)
-
-    # 保存动画
-    if save_path:
+    # 创建动画或保存图片
+    if dimensions == 3 and save_path:
+        def update(frame):
+            ax.view_init(elev=30, azim=frame)
+            return scatter,
+        anim = FuncAnimation(fig, update, frames=np.arange(0, 360, 2), interval=50)
         print(f"Saving animation to {save_path}...")
         if save_path.endswith(".gif"):
-            anim.save(save_path, writer="pillow", fps=10)
+            anim.save(save_path, writer="pillow", fps=20)
         elif save_path.endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=10)
+            anim.save(save_path, writer="ffmpeg", fps=20)
         else:
             raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
+    elif save_path:
+        plt.savefig(save_path, dpi=300)
+    else:
+        plt.show()
 
-    # 显示动画
-    plt.show()
 
 def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
                       changepoint_col="is_changepoint"):
@@ -434,6 +385,7 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
         print(f"图表已保存至: {save_path}")
+        plt.show()
     else:
         plt.show()
 
@@ -452,23 +404,22 @@ if __name__ == "__main__":
     # hidden_state_trajectories_mds(hidden_states_dir="../hidden/23_11_6_layers_3_hidden_1024_input_489_sub_OB.pt",
     #                               test_csv="../data/sub/hc/404/ADL_B_404_DataOddball_404.csv",
     #                               type="OB", )
-    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/23_10_36_layers_3_hidden_1024_input_489_CP.pt",
-    #                                test_csv="../data/240_rule/df_test_CP.csv",
-    #                                test_type="CP",
-    #                                reduction_type="MDS",
-    #                                dimensions=2,
-    #                                highlight_points=True,
-    #                                save_path="../results/png/240_rule/df_test_CP/hidden_trajectories/mds_2_model.gif", )
+    plot_hidden_state_trajectories(hidden_states_dir="../hidden/28_11_27_layers_3_hidden_1024_input_489_combine_403.pt",
+                                   test_csv="../data/sub/hc/403/combine_403.csv",
+                                   reduction_type="PCA",
+                                   dimensions=2,
+                                   plot_type="normal",
+                                   save_path="../results/png/sub/hc/403/hidden_trajectories/pca_2_model_combine_normal.png", )
 
-    result_OB = compare_distances(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
-                                  test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
-                                  type="OB", )
-    result_CP = compare_distances(hidden_states_dir="../hidden/23_10_36_layers_3_hidden_1024_input_489_CP.pt",
-                                  test_csv="../data/240_rule/df_test_CP.csv",
-                                  type="CP", )
-    print("Oddball Distances:", result_OB)
-    print("Changepoint Distances:", result_CP)
-
-    plot_distance_comparison(result_OB, 
-                             result_CP,
-                             save_path="../results/png/distance.png")
+    # result_OB = compare_distances(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
+    #                               test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
+    #                               type="OB", )
+    # result_CP = compare_distances(hidden_states_dir="../hidden/23_10_36_layers_3_hidden_1024_input_489_CP.pt",
+    #                               test_csv="../data/240_rule/df_test_CP.csv",
+    #                               type="CP", )
+    # print("Oddball Distances:", result_OB)
+    # print("Changepoint Distances:", result_CP)
+    #
+    # plot_distance_comparison(result_OB,
+    #                          result_CP,
+    #                          save_path="../results/png/distance.png")

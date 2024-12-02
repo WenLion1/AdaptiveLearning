@@ -1,3 +1,5 @@
 models/
 hidden/
+*.mov
+*.mp4
 *.gif

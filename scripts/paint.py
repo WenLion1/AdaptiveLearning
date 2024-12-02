@@ -445,13 +445,13 @@ def delete_file(folder_path,
 
 
 if __name__ == "__main__":
-    # csv_path = "../results/csv/sub/403/CP_sub.csv"
-    # saving_name = "CP_sub"
-    # saving_path = "../results/png/sub/403"
-    # paint_table(csv_path=csv_path,
-    #             save_name=saving_name,
-    #             save_path=saving_path,
-    #             trail_type="CP", )
+    csv_path = "../results/combine_UNKNOWN_19_16_39_lstm_layers_3_hidden_1024_input_489_cos.csv"
+    saving_name = "combine_480_403"
+    saving_path = "../results/png/sub/hc/403"
+    paint_table(csv_path=csv_path,
+                save_name=saving_name,
+                save_path=saving_path,
+                trail_type="CP", )
     #
     # csv_path = "../results/csv/sub/403/OB_sub.csv"
     # saving_name = "OB_sub"
@@ -473,11 +473,11 @@ if __name__ == "__main__":
     #     png_save_path="../results/png/sub/403",
     #     png_save_name="CP_OB_403",
     #     is_nihe=0)
-    delete_file(folder_path="../results/csv/sub/hc",
-                key="19_16_39")
-
-    batch_generate_figure(folder_path="../results/csv/sub/hc",
-                          figure_type="model",
-                          save_path="../results/png/sub/hc",
-                          figure_mode="combine",
-                          is_show=1, )
+    # delete_file(folder_path="../results/csv/sub/hc",
+    #             key="19_16_39")
+    #
+    # batch_generate_figure(folder_path="../results/csv/sub/hc",
+    #                       figure_type="model",
+    #                       save_path="../results/png/sub/hc",
+    #                       figure_mode="combine",
+    #                       is_show=1, )
