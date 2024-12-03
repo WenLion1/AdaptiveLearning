@@ -1,0 +1,75 @@
+def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
+                      changepoint_col="is_changepoint"):
+    """
+    比较特殊点（oddball 或 changepoint）与其后一个点的距离 和 普通点之间的距离。
+
+    :param hidden_states_dir: 隐藏层数据的地址（通过 torch.load 加载）
+    :param test_csv: 包含测试数据的 CSV 文件路径
+    :param type: "OB"（oddball）或 "CP"（changepoint），决定使用哪种方式处理
+    :param oddball_col: CSV 中标记 oddball 的列名，默认 "is_oddball"
+    :param changepoint_col: CSV 中标记 changepoint 的列名，默认 "is_changepoint"
+    :return: 包含两类距离均值、标准差和 t 检验结果的字典
+    """
+    # 加载隐藏层数据
+    hidden_states = torch.load(hidden_states_dir).numpy()
+
+    # 读取 CSV 文件
+    test_data = pd.read_csv(test_csv)
+
+    # 根据类型选择列，并过滤数据
+    if type == "OB":
+        special_col = oddball_col
+        test_data = test_data[test_data[special_col] != -1]  # 只保留 is_oddball != -1 的行
+    elif type == "CP":
+        special_col = changepoint_col
+        test_data = test_data[test_data[special_col] != -1]  # 只保留 is_changepoint != -1 的行
+    else:
+        raise ValueError("type 参数只能是 'OB' 或 'CP'")
+
+    # 提取特殊点的索引
+    special_indices = test_data.index[test_data[special_col] == 1].to_numpy()
+
+    # 确保索引有效，过滤掉超出范围的点
+    special_indices = special_indices[special_indices + 1 < hidden_states.shape[0]]
+
+    # 计算特殊点到其下一个点的距离
+    special_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices], axis=1)
+
+    # 计算普通点之间的距离
+    all_indices = test_data.index.to_numpy()
+    normal_indices = np.setdiff1d(all_indices, special_indices)  # 普通点索引
+    if len(normal_indices) < 2:
+        raise ValueError("普通点数量不足，无法计算距离。")
+
+    normal_distances = []
+    for i in range(len(normal_indices) - 1):
+        dist = np.linalg.norm(hidden_states[normal_indices[i + 1]] - hidden_states[normal_indices[i]])
+        normal_distances.append(dist)
+
+    normal_distances = np.array(normal_distances)
+
+    # 统计信息
+    special_mean, special_std = np.mean(special_distances), np.std(special_distances)
+    normal_mean, normal_std = np.mean(normal_distances), np.std(normal_distances)
+
+    # 进行 t 检验
+    t_stat, p_value = ttest_ind(special_distances, normal_distances, equal_var=False)
+
+    # 返回结果
+    return {
+        "special_distances": {
+            "mean": special_mean,
+            "std": special_std,
+            "count": len(special_distances),
+        },
+        "normal_distances": {
+            "mean": normal_mean,
+            "std": normal_std,
+            "count": len(normal_distances),
+        },
+        "t_test": {
+            "t_statistic": t_stat,
+            "p_value": p_value,
+            "significant": p_value < 0.05
+        }
+    }

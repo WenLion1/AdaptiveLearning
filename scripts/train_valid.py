@@ -218,8 +218,8 @@ if __name__ == "__main__":
     # 模型参数
     model_name = "rnn"
     input_size = 489
-    hidden_size = 1024
-    num_layers = 1
+    hidden_size = 16
+    num_layers = 3
     output_size = 2
     batch_size = 1
     sequence_length = 240
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     warmup_epochs = 2
     tol = 1e-4
     saving_name = os.path.join(model_dir,
-                               f'{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_{model_name}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.h5')
+                               f'{model_name}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.h5')
 
     # load dataframes
     data_dir = '../data/240_rule'

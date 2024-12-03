@@ -212,9 +212,6 @@ class perceptual_network_vm(nn.Module):
         combined = torch.cat((rule_input.to(self.device), angle_input.to(self.device)), dim=2)
 
         out, hn = self.network(combined)
-        print("out: ", out)
-        print("---------------")
-        print("hn: ", hn)
 
         # out = self.fc(out[:, -1, :])
 

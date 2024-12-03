@@ -153,11 +153,13 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     # 读取 CSV 文件
     test_data = pd.read_csv(test_csv)
 
-    # 根据类型选择列
+    # 根据类型选择列，并过滤数据
     if type == "OB":
         special_col = oddball_col
+        test_data = test_data[test_data[special_col] != -1]  # 只保留 is_oddball != -1 的行
     elif type == "CP":
         special_col = changepoint_col
+        test_data = test_data[test_data[special_col] != -1]  # 只保留 is_changepoint != -1 的行
     else:
         raise ValueError("type 参数只能是 'OB' 或 'CP'")
 
@@ -171,7 +173,7 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     special_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices], axis=1)
 
     # 计算普通点之间的距离
-    all_indices = np.arange(len(hidden_states))
+    all_indices = test_data.index.to_numpy()
     normal_indices = np.setdiff1d(all_indices, special_indices)  # 普通点索引
     if len(normal_indices) < 2:
         raise ValueError("普通点数量不足，无法计算距离。")
@@ -519,37 +521,18 @@ def get_trial_vars_from_pes_cannon(noise,
 
 
 if __name__ == "__main__":
-    # svm_hidden_states(hidden_states_dir="../hidden/6_19_43_layers_3_hidden_1024_input_10.pt")
+    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/3_11_8_rnn_layers_3_hidden_16_input_489_combine.pt",
+    #                                test_csv="../data/sub/hc/all_combine_sub.csv",
+    #                                reduction_type="PCA",
+    #                                dimensions=3,
+    #                                plot_type="all",
+    #                                save_path="../results/png/sub/hc/hidden_trajectories/pca_3_rnn_layers_3_hidden_16_input_489_combine.gif", )
 
-    # svm_hidden_states_singlepoint(hidden_states_dir="../hidden/21_19_56_layers_3_hidden_1024_input_489.pt",
-    #                               label_csv="../data/240_rule/df_test_OB.csv",
-    #                               type="OB", )
+    result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
+                                  test_csv="../data/sub/hc/all_combine_sub.csv",
+                                  type="CP")
+    result_ob = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
+                                  test_csv="../data/sub/hc/all_combine_sub.csv",
+                                  type="OB")
 
-    # hidden_state_trajectories_pca_2d(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
-    #                                  test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
-    #                                  type="OB", )
-
-    # hidden_state_trajectories_mds(hidden_states_dir="../hidden/23_11_6_layers_3_hidden_1024_input_489_sub_OB.pt",
-    #                               test_csv="../data/sub/hc/404/ADL_B_404_DataOddball_404.csv",
-    #                               type="OB", )
-    # update_is_changepoint_in_place("../data/sub/hc/403/combine_403.csv")
-
-    plot_hidden_state_trajectories(hidden_states_dir="../hidden/28_11_27_layers_3_hidden_1024_input_489_combine_403.pt",
-                                   test_csv="../data/sub/hc/403/combine_403.csv",
-                                   reduction_type="PCA",
-                                   dimensions=3,
-                                   plot_type="all",
-                                   save_path="../results/png/sub/hc/403/hidden_trajectories/pca_3_model_combine.gif", )
-
-    # result_OB = compare_distances(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
-    #                               test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
-    #                               type="OB", )
-    # result_CP = compare_distances(hidden_states_dir="../hidden/23_10_36_layers_3_hidden_1024_input_489_CP.pt",
-    #                               test_csv="../data/240_rule/df_test_CP.csv",
-    #                               type="CP", )
-    # print("Oddball Distances:", result_OB)
-    # print("Changepoint Distances:", result_CP)
-    #
-    # plot_distance_comparison(result_OB,
-    #                          result_CP,
-    #                          save_path="../results/png/distance.png")
+    plot_distance_comparison(oddball_data=result_ob, changepoint_data=result_cp, save_path="../results/png/all_sub_distance.png")
