@@ -7,7 +7,7 @@ import torch
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import to_rgba
-from scipy.stats import ttest_ind
+from scipy.stats import ttest_ind, norm
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
@@ -133,110 +133,6 @@ def svm_hidden_states_singlepoint(hidden_states_dir,
     # 如果需要计算其他性能指标，可以在训练集上训练模型，然后在测试集上计算
     # 但由于交叉验证不分割训练集和测试集，所以这里不适用
     # 可以选择在交叉验证的每一折中分别计算，但这需要手动实现交叉验证的逻辑
-
-
-def plot_hidden_state_trajectories(hidden_states_dir,
-                                   test_csv="",
-                                   reduction_type="PCA",
-                                   dimensions=3,
-                                   plot_type="all",  # 新增参数: 'all', 'normal', 'special'
-                                   save_path=None):
-    """
-    绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并染色和添加旋转动画。
-
-    :param hidden_states_dir: 隐藏层存储地址
-    :param test_csv: RNN 测试时使用的 CSV 数据集
-    :param reduction_type: 降维方法 ("PCA" 或 "MDS")
-    :param dimensions: 降维到的维度 (2 或 3)
-    :param plot_type: 绘制点类型 ('all', 'normal', 'special')
-    :param save_path: 图像或动画保存路径 (.gif 或 .mp4)
-    :return: None
-    """
-
-    # 加载隐藏层
-    hidden_states = torch.load(hidden_states_dir).numpy()
-
-    # 加载测试数据集 CSV
-    if test_csv:
-        test_data = pd.read_csv(test_csv)
-        is_cp = test_data["is_changepoint"]
-        is_ob = test_data["is_oddball"]
-
-        # 根据 plot_type 筛选点
-        if plot_type == "normal":
-            selected_indices = test_data.index[(is_cp == 0) & (is_ob == 0)].to_numpy()
-        elif plot_type == "special":
-            selected_indices = test_data.index[(is_cp == 1) | (is_ob == 1)].to_numpy()
-        elif plot_type == "all":
-            selected_indices = np.arange(len(hidden_states))
-        else:
-            raise ValueError("plot_type 参数必须是 'all', 'normal', 或 'special'")
-    else:
-        selected_indices = np.arange(len(hidden_states))
-
-    # 筛选数据
-    hidden_states = hidden_states[selected_indices]
-
-    # 降维
-    if reduction_type == "PCA":
-        reducer = PCA(n_components=dimensions)
-    elif reduction_type == "MDS":
-        reducer = MDS(n_components=dimensions, dissimilarity='euclidean', random_state=42)
-    else:
-        raise ValueError("reduction_type 参数只能是 'PCA' 或 'MDS'")
-    hidden_states_reduced = reducer.fit_transform(hidden_states)
-
-    # 获取坐标
-    coords = [hidden_states_reduced[:, i] for i in range(dimensions)]
-
-    # 初始化图形
-    fig = plt.figure(figsize=(10, 7))
-    if dimensions == 3:
-        ax = fig.add_subplot(111, projection='3d')
-        ax.set_xlim(coords[0].min(), coords[0].max())
-        ax.set_ylim(coords[1].min(), coords[1].max())
-        ax.set_zlim(coords[2].min(), coords[2].max())
-    elif dimensions == 2:
-        ax = fig.add_subplot(111)
-        ax.set_xlim(coords[0].min(), coords[0].max())
-        ax.set_ylim(coords[1].min(), coords[1].max())
-    else:
-        raise ValueError("dimensions 参数只能是 2 或 3")
-
-    # 设置颜色
-    point_colors = ['#FF0000' if i in test_data.index[(is_cp == 1) | (is_ob == 1)]
-                    else '#808080' for i in selected_indices]
-
-    scatter = None
-    if dimensions == 3:
-        scatter = ax.scatter(coords[0], coords[1], coords[2], c=point_colors, s=50, edgecolors='k')
-    else:
-        ax.scatter(coords[0], coords[1], c=point_colors, s=50, edgecolors='k')
-
-    # 添加图例
-    legend_elements = [
-        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF0000', markersize=10, label='CP / OB (Special)'),
-        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#808080', markersize=10, label='Normal'),
-    ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
-
-    # 创建动画或保存图片
-    if dimensions == 3 and save_path:
-        def update(frame):
-            ax.view_init(elev=30, azim=frame)
-            return scatter,
-        anim = FuncAnimation(fig, update, frames=np.arange(0, 360, 2), interval=50)
-        print(f"Saving animation to {save_path}...")
-        if save_path.endswith(".gif"):
-            anim.save(save_path, writer="pillow", fps=20)
-        elif save_path.endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=20)
-        else:
-            raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
-    elif save_path:
-        plt.savefig(save_path, dpi=300)
-    else:
-        plt.show()
 
 
 def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
@@ -390,6 +286,238 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
         plt.show()
 
 
+def plot_hidden_state_trajectories(hidden_states_dir,
+                                   test_csv="",
+                                   reduction_type="PCA",
+                                   dimensions=3,
+                                   plot_type="all",  # 'all', 'normal', 'special'
+                                   save_path=None):
+    """
+    绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并染色和添加旋转动画。
+
+    :param hidden_states_dir: 隐藏层存储地址
+    :param test_csv: RNN 测试时使用的 CSV 数据集
+    :param reduction_type: 降维方法 ("PCA" 或 "MDS")
+    :param dimensions: 降维到的维度 (2 或 3)
+    :param plot_type: 绘制点类型 ('all', 'normal', 'special')
+    :param save_path: 图像或动画保存路径 (.gif 或 .mp4)
+    :return: None
+    """
+
+    # 加载隐藏层
+    hidden_states = torch.load(hidden_states_dir).numpy()
+
+    # 加载测试数据集 CSV
+    if test_csv:
+        test_data = pd.read_csv(test_csv)
+        is_cp = test_data["is_changepoint"]
+        is_ob = test_data["is_oddball"]
+
+        # 根据 plot_type 筛选点
+        if plot_type == "normal":
+            selected_indices = test_data.index[(is_cp == 0) | (is_ob == 0)].to_numpy()
+        elif plot_type == "special":
+            selected_indices = test_data.index[(is_cp == 1) | (is_ob == 1)].to_numpy()
+        elif plot_type == "all":
+            selected_indices = np.arange(len(hidden_states))
+        else:
+            raise ValueError("plot_type 参数必须是 'all', 'normal', 或 'special'")
+    else:
+        selected_indices = np.arange(len(hidden_states))
+
+    # 筛选数据
+    hidden_states = hidden_states[selected_indices]
+
+    # 降维
+    if reduction_type == "PCA":
+        reducer = PCA(n_components=dimensions)
+    elif reduction_type == "MDS":
+        reducer = MDS(n_components=dimensions, dissimilarity='euclidean', random_state=42)
+    else:
+        raise ValueError("reduction_type 参数只能是 'PCA' 或 'MDS'")
+    hidden_states_reduced = reducer.fit_transform(hidden_states)
+
+    # 获取坐标
+    coords = [hidden_states_reduced[:, i] for i in range(dimensions)]
+
+    # 初始化图形
+    fig = plt.figure(figsize=(10, 7))
+    if dimensions == 3:
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_xlim(coords[0].min(), coords[0].max())
+        ax.set_ylim(coords[1].min(), coords[1].max())
+        ax.set_zlim(coords[2].min(), coords[2].max())
+    elif dimensions == 2:
+        ax = fig.add_subplot(111)
+        ax.set_xlim(coords[0].min(), coords[0].max())
+        ax.set_ylim(coords[1].min(), coords[1].max())
+    else:
+        raise ValueError("dimensions 参数只能是 2 或 3")
+
+    # 设置颜色
+    point_colors = []
+    for idx in selected_indices:
+        if plot_type == "all":
+            # 'all' 情况下，所有 is_changepoint 染红，所有 is_oddball 染蓝
+            if idx in test_data.index[(is_cp == 1) | (is_cp == 0)]:
+                point_colors.append('#FF0000')  # CP (红色)
+            elif idx in test_data.index[(is_ob == 1) | (is_ob == 0)]:
+                point_colors.append('#0000FF')  # OB (蓝色)
+            else:
+                point_colors.append('#808080')  # 普通点 (灰色)
+        elif plot_type == "normal":
+            # 'normal' 情况下，is_changepoint = 0 染红，is_oddball = 0 染蓝
+            if idx in test_data.index[(is_cp == 0)]:
+                point_colors.append('#FF0000')  # Normal - CP (红色)
+            elif idx in test_data.index[(is_ob == 0)]:
+                point_colors.append('#0000FF')  # Normal - OB (蓝色)
+            else:
+                point_colors.append('#808080')  # 普通点 (灰色)
+        else:
+            # 'special' 情况下，is_changepoint = 1 染红，is_oddball = 1 染蓝
+            if idx in test_data.index[(is_cp == 1)]:
+                point_colors.append('#FF0000')  # CP (红色)
+            elif idx in test_data.index[(is_ob == 1)]:
+                point_colors.append('#0000FF')  # OB (蓝色)
+            else:
+                point_colors.append('#808080')  # 普通点 (灰色)
+
+    scatter = None
+    if dimensions == 3:
+        scatter = ax.scatter(coords[0], coords[1], coords[2], c=point_colors, s=50, edgecolors='k')
+    else:
+        ax.scatter(coords[0], coords[1], c=point_colors, s=50, edgecolors='k')
+
+    # 添加图例
+    legend_elements = [
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#FF0000', markersize=10,
+                   label='CP (Change Point)'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#0000FF', markersize=10, label='OB (Oddball)'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='#808080', markersize=10, label='Normal'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10)
+
+    # 创建动画或保存图片
+    if dimensions == 3 and save_path:
+        def update(frame):
+            ax.view_init(elev=30, azim=frame)
+            return scatter,
+
+        anim = FuncAnimation(fig, update, frames=np.arange(0, 360, 2), interval=50)
+        print(f"Saving animation to {save_path}...")
+        if save_path.endswith(".gif"):
+            anim.save(save_path, writer="pillow", fps=20)
+        elif save_path.endswith(".mp4"):
+            anim.save(save_path, writer="ffmpeg", fps=20)
+        else:
+            raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
+    elif save_path:
+        plt.savefig(save_path, dpi=300)
+    else:
+        plt.show()
+
+
+def get_trial_vars_from_pes_cannon(noise,
+                                   PE,
+                                   modHaz,
+                                   newBlock,
+                                   allHeliVis,
+                                   initRU,
+                                   heliVisVar,
+                                   lw,
+                                   ud,
+                                   driftRate,
+                                   isOdd,
+                                   outcomeSpace):
+    """
+    用于根据预测误差和一组模型参数计算主观的变化点概率（CPP）和相对不确定性（RU）的函数。
+
+    参数:
+    - noise: 高斯噪声分布的标准差
+    - PE: 每个试次的预测误差
+    - modHaz: 危险率
+    - newBlock: 一个逻辑数组，表示新块的起始位置
+    - allHeliVis: 数组，表示直升机是否可见（1表示可见）
+    - initRU: 初始化的相对不确定性
+    - heliVisVar: 可见直升机预测线索的方差
+    - lw: 对惊讶敏感性的似然权重
+    - ud: 不确定性耗竭因子
+    - driftRate: 用于增加不确定性的漂移率
+    - isOdd: 一个逻辑数组，表示该试次是否属于奇异条件
+    - outcomeSpace: 结果空间的大小
+
+    返回值:
+    - errBased_pCha: 基于误差的变化点概率
+    - errBased_RU: 基于误差的相对不确定性
+    - errBased_LR: 基于误差的学习率
+    - errBased_UP: 基于学习率和预测误差的模型更新
+    """
+
+    # 初始化输出数组
+    errBased_RU = np.full_like(PE, np.nan, dtype=float)
+    errBased_pCha = np.full_like(PE, np.nan, dtype=float)
+    errBased_LR = np.full_like(PE, np.nan, dtype=float)
+    errBased_UP = np.full_like(PE, np.nan, dtype=float)
+    H = modHaz  # 危险率
+
+    for i in range(1, len(noise)):
+        # 首先计算相对不确定性（RU）
+        if newBlock[i]:
+            errBased_RU[i] = initRU
+        else:
+            nVar = noise[i - 1] ** 2
+            cp = errBased_pCha[i - 1]
+            tPE = PE[i - 1]
+            inRU = errBased_RU[i - 1]
+
+            # 计算运行长度
+            runLength = (1 - inRU) / inRU
+
+            if not isOdd[i]:
+                # 对于变化点条件，更新不确定性
+                numerator = (cp * nVar) + ((1 - cp) * inRU * nVar) + cp * (1 - cp) * (tPE * (1 - inRU)) ** 2
+            else:
+                # 对于奇异条件，更新不确定性
+                numerator = (cp * nVar / runLength) + ((1 - cp) * nVar / (runLength + 1)) + cp * (1 - cp) * (
+                        tPE * inRU) ** 2
+
+            # 如果是漂移条件，根据漂移率增加不确定性
+            if driftRate[i] > 0:
+                numerator += driftRate[i] ** 2
+
+            numerator /= ud  # 用常数除以不确定性
+            denominator = numerator + nVar  # 分母是分子加噪声方差
+            errBased_RU[i] = numerator / denominator  # RU是分数
+
+            # 如果有直升机可见，调整不确定性
+            if allHeliVis[i] == 1:
+                inRU = ((errBased_RU[i] * nVar * heliVisVar) / (errBased_RU[i] * nVar + heliVisVar)) / nVar
+                if np.isnan(inRU):
+                    inRU = 0
+                errBased_RU[i] = inRU
+
+        if not np.isfinite(errBased_RU[i]):
+            raise ValueError("非有限的错误：errBased_RU")
+
+        # 计算基于误差的CPP（变化点概率）
+        totUnc = (noise[i] ** 2) / (1 - errBased_RU[i])
+
+        pSame = (1 - H) * norm.pdf(PE[i], 0, np.sqrt(totUnc)) ** lw
+        pNew = H * (1 / outcomeSpace) ** lw
+        errBased_pCha[i] = pNew / (pSame + pNew)
+
+        # 计算学习率
+        if not isOdd[i]:
+            errBased_LR[i] = errBased_RU[i] + errBased_pCha[i] - errBased_RU[i] * errBased_pCha[i]
+        else:
+            errBased_LR[i] = errBased_RU[i] - errBased_RU[i] * errBased_pCha[i]
+
+    # 计算模型更新
+    errBased_UP = errBased_LR * PE
+
+    return errBased_pCha, errBased_RU, errBased_LR, errBased_UP
+
+
 if __name__ == "__main__":
     # svm_hidden_states(hidden_states_dir="../hidden/6_19_43_layers_3_hidden_1024_input_10.pt")
 
@@ -404,12 +532,14 @@ if __name__ == "__main__":
     # hidden_state_trajectories_mds(hidden_states_dir="../hidden/23_11_6_layers_3_hidden_1024_input_489_sub_OB.pt",
     #                               test_csv="../data/sub/hc/404/ADL_B_404_DataOddball_404.csv",
     #                               type="OB", )
+    # update_is_changepoint_in_place("../data/sub/hc/403/combine_403.csv")
+
     plot_hidden_state_trajectories(hidden_states_dir="../hidden/28_11_27_layers_3_hidden_1024_input_489_combine_403.pt",
                                    test_csv="../data/sub/hc/403/combine_403.csv",
                                    reduction_type="PCA",
-                                   dimensions=2,
-                                   plot_type="normal",
-                                   save_path="../results/png/sub/hc/403/hidden_trajectories/pca_2_model_combine_normal.png", )
+                                   dimensions=3,
+                                   plot_type="all",
+                                   save_path="../results/png/sub/hc/403/hidden_trajectories/pca_3_model_combine.gif", )
 
     # result_OB = compare_distances(hidden_states_dir="../hidden/23_11_0_layers_3_hidden_1024_input_489_sub_OB.pt",
     #                               test_csv="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",

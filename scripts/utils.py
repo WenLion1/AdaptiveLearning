@@ -466,14 +466,92 @@ def change_oddball_to_isoddball(folder_name):
                     print(f"处理文件 {file_path} 时出错: {e}")
 
 
+def merge_csv_rows_in_folder(folder_path,
+                             output_path):
+    """
+    将指定文件夹及其子文件夹内所有以 ADL 开头的 CSV 文件按行合并并保存到一个新文件中。
+
+    :param folder_path: 根文件夹路径
+    :param output_path: 合并后保存的文件路径
+    """
+    # 用于存储所有符合条件的 DataFrame
+    all_dfs = []
+
+    # 遍历文件夹及其子文件夹
+    for root, _, files in os.walk(folder_path):
+        for file in files:
+            # 判断文件是否以 ADL 开头且是 CSV 文件
+            if file.startswith("ADL") and file.endswith(".csv"):
+                file_path = os.path.join(root, file)
+                print(f"正在处理文件: {file_path}")
+                # 读取 CSV 文件并存入列表
+                df = pd.read_csv(file_path)
+                all_dfs.append(df)
+
+    # 合并所有 DataFrame
+    if all_dfs:
+        merged_df = pd.concat(all_dfs, axis=0, ignore_index=True)
+        # 保存到指定的输出路径
+        merged_df.to_csv(output_path, index=False)
+        print(f"合并完成，结果已保存到 {output_path}")
+    else:
+        print("未找到符合条件的文件！")
+
+
+
+def update_is_changepoint_in_place(csv_file):
+    """
+    处理 CSV 文件中的数据：
+    1. 如果不存在 `is_changepoint` 列，则添加此列。
+    2. 当 `is_oddball = -1` 时，根据 `distMean` 列的变化情况更新 `is_changepoint` 列：
+       - 如果 `distMean` 发生变化，则将 `is_changepoint` 设置为 1。
+       - 否则设置为 0。
+    3. 当 `is_oddball != -1` 时，将 `is_changepoint` 设置为 -1。
+
+    :param csv_file: 输入的 CSV 文件路径，处理结果将直接覆盖原文件。
+    """
+    # 读取 CSV 文件
+    df = pd.read_csv(csv_file)
+
+    # 确保必要的列存在
+    if not {'is_oddball', 'distMean'}.issubset(df.columns):
+        raise ValueError("CSV 文件必须包含 'is_oddball' 和 'distMean' 列")
+
+    # 如果 `is_changepoint` 列不存在，则添加此列，默认值为 0
+    if 'is_changepoint' not in df.columns:
+        df['is_changepoint'] = 0
+
+    # 处理 `is_oddball = -1` 的行
+    oddball_mask = df['is_oddball'] == -1
+    distMean_values = df.loc[oddball_mask, 'distMean']
+
+    # 找到 `distMean` 列变化的行
+    distMean_changes = distMean_values != distMean_values.shift()
+
+    # 更新 `is_changepoint` 列
+    df.loc[oddball_mask, 'is_changepoint'] = distMean_changes.astype(int)
+
+    # 将 `is_oddball != -1` 的行的 `is_changepoint` 设置为 -1
+    df.loc[~oddball_mask, 'is_changepoint'] = -1
+
+    # 将结果保存回原文件
+    df.to_csv(csv_file, index=False)
+    print(f"文件 {csv_file} 处理完成。")
+
+
 if __name__ == "__main__":
     # get_mat_csv_batch(file_path="C:/Learn/Project/bylw/cannonBehavData_forDryad",
     #                   key_names=[],
     #                   column_names=["distMean", "outcome", "pred", "oddBall"],
     #                   csv_save_path="../data/sub/yuanwen", )
 
-    add_rule(folder_path="../data/sub/yuanwen")
+    # add_rule(folder_path="../data/sub/yuanwen")
+    #
+    # change_oddball_to_isoddball(folder_name="../data/sub/yuanwen")
+    #
+    # classify_file_by_endwith_num(folder_path="../data/sub/yuanwen")
 
-    change_oddball_to_isoddball(folder_name="../data/sub/yuanwen")
+    # merge_csv_rows_in_folder("../data/sub/hc",
+    #                          "../data/sub/hc/all_combine_sub.csv")
 
-    classify_file_by_endwith_num(folder_path="../data/sub/yuanwen")
+    update_is_changepoint_in_place("../data/sub/hc/all_combine_sub.csv")
