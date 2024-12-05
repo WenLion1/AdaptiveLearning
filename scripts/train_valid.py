@@ -216,10 +216,10 @@ if __name__ == "__main__":
     n_epoch = 1000
 
     # 模型参数
-    model_name = "rnn"
+    model_name = "lstm"
     input_size = 489
     hidden_size = 16
-    num_layers = 3
+    num_layers = 1
     output_size = 2
     batch_size = 1
     sequence_length = 240

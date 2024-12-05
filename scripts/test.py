@@ -230,11 +230,11 @@ if __name__ == "__main__":
     #                input_size=10, )
 
     evaluate_model(data_dir="../data/sub/hc/all_combine_sub.csv",
-                   model_path="../models/240_rule/rnn_layers_3_hidden_16_input_489.h5",
+                   model_path="../models/240_rule/lstm_layers_1_hidden_16_input_489.h5",
                    results_dir="../results",
                    hidden_states_save_dir="../hidden",
                    is_save_hidden_state=1,
                    test_type="combine",
-                   model_type="rnn",
-                   num_layers=3,
+                   model_type="lstm",
+                   num_layers=1,
                    hidden_size=16,)

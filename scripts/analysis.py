@@ -7,7 +7,7 @@ import torch
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import to_rgba
-from scipy.stats import ttest_ind, norm
+from scipy.stats import ttest_ind, norm, stats
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
@@ -47,6 +47,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 
+def sub_csv_distance(csv_path)
 
 def svm_hidden_states(hidden_states_dir, test_size=0.2):
     """
@@ -138,7 +139,7 @@ def svm_hidden_states_singlepoint(hidden_states_dir,
 def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
                       changepoint_col="is_changepoint"):
     """
-    比较特殊点（oddball 或 changepoint）与其后一个点的距离 和 普通点之间的距离。
+    比较特殊点（oddball 或 changepoint）与其后一个点的距离，以及特殊点和特殊点后第二个点两者之间的距离。
 
     :param hidden_states_dir: 隐藏层数据的地址（通过 torch.load 加载）
     :param test_csv: 包含测试数据的 CSV 文件路径
@@ -167,10 +168,13 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     special_indices = test_data.index[test_data[special_col] == 1].to_numpy()
 
     # 确保索引有效，过滤掉超出范围的点
-    special_indices = special_indices[special_indices + 1 < hidden_states.shape[0]]
+    special_indices = special_indices[(special_indices > 0) & (special_indices + 2 < hidden_states.shape[0])]
 
     # 计算特殊点到其下一个点的距离
-    special_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices], axis=1)
+    special_to_next_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices], axis=1)
+
+    # 计算特殊点和特殊点后第二个点两者之间的距离
+    special_to_second_next_distances = np.linalg.norm(hidden_states[special_indices + 2] - hidden_states[special_indices], axis=1)
 
     # 计算普通点之间的距离
     all_indices = test_data.index.to_numpy()
@@ -186,28 +190,40 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     normal_distances = np.array(normal_distances)
 
     # 统计信息
-    special_mean, special_std = np.mean(special_distances), np.std(special_distances)
+    special_to_next_mean, special_to_next_std = np.mean(special_to_next_distances), np.std(special_to_next_distances)
+    special_to_second_next_mean, special_to_second_next_std = np.mean(special_to_second_next_distances), np.std(special_to_second_next_distances)
     normal_mean, normal_std = np.mean(normal_distances), np.std(normal_distances)
 
     # 进行 t 检验
-    t_stat, p_value = ttest_ind(special_distances, normal_distances, equal_var=False)
+    t_stat_to_next, p_value_to_next = stats.ttest_ind(special_to_next_distances, normal_distances, equal_var=False)
+    t_stat_to_second_next, p_value_to_second_next = stats.ttest_ind(special_to_second_next_distances, normal_distances, equal_var=False)
 
     # 返回结果
     return {
-        "special_distances": {
-            "mean": special_mean,
-            "std": special_std,
-            "count": len(special_distances),
+        "special_to_next_distances": {
+            "mean": special_to_next_mean,
+            "std": special_to_next_std,
+            "count": len(special_to_next_distances),
+        },
+        "special_to_second_next_distances": {
+            "mean": special_to_second_next_mean,
+            "std": special_to_second_next_std,
+            "count": len(special_to_second_next_distances),
         },
         "normal_distances": {
             "mean": normal_mean,
             "std": normal_std,
             "count": len(normal_distances),
         },
-        "t_test": {
-            "t_statistic": t_stat,
-            "p_value": p_value,
-            "significant": p_value < 0.05
+        "t_test_to_next": {
+            "t_statistic": t_stat_to_next,
+            "p_value": p_value_to_next,
+            "significant": p_value_to_next < 0.05
+        },
+        "t_test_to_second_next": {
+            "t_statistic": t_stat_to_second_next,
+            "p_value": p_value_to_second_next,
+            "significant": p_value_to_second_next < 0.05
         }
     }
 
@@ -222,13 +238,21 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
     """
     # 提取数据
     labels = ["Oddball", "Changepoint"]
-    special_means = [
-        oddball_data["special_distances"]["mean"],
-        changepoint_data["special_distances"]["mean"]
+    special_to_next_means = [
+        oddball_data["special_to_next_distances"]["mean"],
+        changepoint_data["special_to_next_distances"]["mean"]
     ]
-    special_stds = [
-        oddball_data["special_distances"]["std"],
-        changepoint_data["special_distances"]["std"]
+    special_to_next_stds = [
+        oddball_data["special_to_next_distances"]["std"],
+        changepoint_data["special_to_next_distances"]["std"]
+    ]
+    special_to_second_next_means = [
+        oddball_data["special_to_second_next_distances"]["mean"],
+        changepoint_data["special_to_second_next_distances"]["mean"]
+    ]
+    special_to_second_next_stds = [
+        oddball_data["special_to_second_next_distances"]["std"],
+        changepoint_data["special_to_second_next_distances"]["std"]
     ]
     normal_means = [
         oddball_data["normal_distances"]["mean"],
@@ -238,30 +262,44 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
         oddball_data["normal_distances"]["std"],
         changepoint_data["normal_distances"]["std"]
     ]
-    t_values = [
-        oddball_data["t_test"]["t_statistic"],
-        changepoint_data["t_test"]["t_statistic"]
+    t_values_to_next = [
+        oddball_data["t_test_to_next"]["t_statistic"],
+        changepoint_data["t_test_to_next"]["t_statistic"]
     ]
-    p_values = [
-        oddball_data["t_test"]["p_value"],
-        changepoint_data["t_test"]["p_value"]
+    p_values_to_next = [
+        oddball_data["t_test_to_next"]["p_value"],
+        changepoint_data["t_test_to_next"]["p_value"]
+    ]
+    t_values_to_second_next = [
+        oddball_data["t_test_to_second_next"]["t_statistic"],
+        changepoint_data["t_test_to_second_next"]["t_statistic"]
+    ]
+    p_values_to_second_next = [
+        oddball_data["t_test_to_second_next"]["p_value"],
+        changepoint_data["t_test_to_second_next"]["p_value"]
     ]
 
     # 设置图形
     x = np.arange(len(labels))  # x轴的位置
-    width = 0.35  # 柱状图宽度
+    width = 0.2  # 柱状图宽度
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
 
     # 绘制柱状图
-    ax.bar(x - width / 2, special_means, width, yerr=special_stds, label="Special", color="orange", capsize=5)
-    ax.bar(x + width / 2, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
+    ax.bar(x - width, special_to_next_means, width, yerr=special_to_next_stds, label="Special to Next", color="orange", capsize=5)
+    ax.bar(x, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
+    ax.bar(x + width, special_to_second_next_means, width, yerr=special_to_second_next_stds, label="Special to Second Next", color="green", capsize=5)
 
     # 添加 t 值和 p 值
     for i, label in enumerate(labels):
         ax.text(
-            x[i], max(special_means[i] + special_stds[i], normal_means[i] + normal_stds[i]) + 0.1,
-            f"t={t_values[i]:.2f}\np={p_values[i]:.2e}",
+            x[i] - width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
+            f"t={t_values_to_next[i]:.2f}\np={p_values_to_next[i]:.2e}",
+            ha="center", va="bottom", fontsize=10, color="black"
+        )
+        ax.text(
+            x[i] + width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
+            f"t={t_values_to_second_next[i]:.2f}\np={p_values_to_second_next[i]:.2e}",
             ha="center", va="bottom", fontsize=10, color="black"
         )
 
@@ -275,15 +313,14 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
 
     # 坐标轴范围设置一致
     max_y = max(
-        max(special_means[i] + special_stds[i], normal_means[i] + normal_stds[i]) for i in range(len(labels))
+        max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) for i in range(len(labels))
     )
     ax.set_ylim(0, max_y + 0.5)
 
     # 保存或显示图表
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
-        print(f"图表已保存至: {save_path}")
-        plt.show()
+        plt.close()
     else:
         plt.show()
 
@@ -334,7 +371,7 @@ def plot_hidden_state_trajectories(hidden_states_dir,
     if reduction_type == "PCA":
         reducer = PCA(n_components=dimensions)
     elif reduction_type == "MDS":
-        reducer = MDS(n_components=dimensions, dissimilarity='euclidean', random_state=42)
+        reducer = MDS(n_components=dimensions, dissimilarity='euclidean', random_state=42, normalized_stress='auto')
     else:
         raise ValueError("reduction_type 参数只能是 'PCA' 或 'MDS'")
     hidden_states_reduced = reducer.fit_transform(hidden_states)
@@ -521,12 +558,12 @@ def get_trial_vars_from_pes_cannon(noise,
 
 
 if __name__ == "__main__":
-    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/3_11_8_rnn_layers_3_hidden_16_input_489_combine.pt",
+    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
     #                                test_csv="../data/sub/hc/all_combine_sub.csv",
-    #                                reduction_type="PCA",
+    #                                reduction_type="MDS",
     #                                dimensions=3,
     #                                plot_type="all",
-    #                                save_path="../results/png/sub/hc/hidden_trajectories/pca_3_rnn_layers_3_hidden_16_input_489_combine.gif", )
+    #                                save_path="../results/png/sub/hc/hidden_trajectories/mds_3_lstm_layers_1_hidden_16_input_489_combine.gif", )
 
     result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
                                   test_csv="../data/sub/hc/all_combine_sub.csv",
