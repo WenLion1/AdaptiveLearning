@@ -145,7 +145,7 @@ def evaluate_model(data_dir,
     if is_save_hidden_state == 1:
         hidden_states = np.vstack(hidden_states)
         torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
-                                                             f"{right_now.tm_mday}_{right_now.tm_hour}_{right_now.tm_min}_{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt"))
+                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}_1.pt"))
 
     # 计算平均损失并打印
     average_loss = loss / len(dataloader_CP)
@@ -229,12 +229,12 @@ if __name__ == "__main__":
     #                model_type="lstm",
     #                input_size=10, )
 
-    evaluate_model(data_dir="../data/sub/hc/all_combine_sub.csv",
-                   model_path="../models/240_rule/lstm_layers_1_hidden_16_input_489.h5",
+    evaluate_model(data_dir="../data/sub/hc/403/ADL_B_403_DataCP_403.csv",
+                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_1.h5",
                    results_dir="../results",
                    hidden_states_save_dir="../hidden",
                    is_save_hidden_state=1,
                    test_type="combine",
-                   model_type="lstm",
+                   model_type="rnn",
                    num_layers=1,
                    hidden_size=16,)

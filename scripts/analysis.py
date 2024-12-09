@@ -47,7 +47,6 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 
-def sub_csv_distance(csv_path)
 
 def svm_hidden_states(hidden_states_dir, test_size=0.2):
     """
@@ -136,6 +135,101 @@ def svm_hidden_states_singlepoint(hidden_states_dir,
     # 可以选择在交叉验证的每一折中分别计算，但这需要手动实现交叉验证的逻辑
 
 
+def sub_csv_distance(csv_path, type):
+    """
+    计算特殊点（is_changepoint 或 is_oddball）与前一个点的 outcome 差值，
+    以及前一个点与下一个点的 outcome 差值，并与普通点之间的差值进行比较。
+
+    :param csv_path: 输入的 CSV 文件路径
+    :param type: 指定处理类型 ("CP" 或 "OB")
+    :return: 包含结果统计信息的字典
+    """
+    # 加载数据
+    data = pd.read_csv(csv_path)
+
+    # 检查 type 参数合法性
+    if type not in ["CP", "OB"]:
+        raise ValueError("type 参数必须为 'CP' 或 'OB'")
+
+    # 根据 type 确定列名和筛选条件
+    type_col = "is_changepoint" if type == "CP" else "is_oddball"
+
+    # 筛选有效数据（不等于 -1 的点）
+    filtered_data = data[data[type_col] != -1].reset_index(drop=True)
+
+    # 获取特殊点的索引
+    special_indices = filtered_data.index[filtered_data[type_col] == 1]
+    all_indices = filtered_data.index
+
+    # 特殊点到前一个点的差值，以及前一个点与下一个点之间的差值
+    special_to_previous_distances = []
+    previous_to_next_distances = []
+
+    for idx in special_indices:
+        if idx - 1 >= 0:
+            diff_previous = abs(filtered_data.loc[idx, "outcome"] - filtered_data.loc[idx - 1, "outcome"])
+            special_to_previous_distances.append(diff_previous)
+
+            if idx + 1 < len(filtered_data):
+                diff_previous_next = abs(filtered_data.loc[idx + 1, "outcome"] - filtered_data.loc[idx - 1, "outcome"])
+                previous_to_next_distances.append(diff_previous_next)
+
+    # 普通点之间的差值
+    normal_indices = np.setdiff1d(all_indices, special_indices)
+    normal_distances = []
+
+    for i in range(len(normal_indices) - 1):
+        idx1, idx2 = normal_indices[i], normal_indices[i + 1]
+        diff = abs(filtered_data.loc[idx2, "outcome"] - filtered_data.loc[idx1, "outcome"])
+        normal_distances.append(diff)
+
+    # 转换为 numpy 数组
+    special_to_previous_distances = np.array(special_to_previous_distances)
+    previous_to_next_distances = np.array(previous_to_next_distances)
+    normal_distances = np.array(normal_distances)
+
+    # 统计信息
+    special_to_previous_mean, special_to_previous_std = np.mean(special_to_previous_distances), np.std(
+        special_to_previous_distances)
+    previous_to_next_mean, previous_to_next_std = np.mean(previous_to_next_distances), np.std(previous_to_next_distances)
+    normal_mean, normal_std = np.mean(normal_distances), np.std(normal_distances)
+
+    # t 检验
+    t_stat_to_previous, p_value_to_previous = ttest_ind(special_to_previous_distances, normal_distances,
+                                                        equal_var=False)
+    t_stat_previous_next, p_value_previous_next = ttest_ind(previous_to_next_distances, normal_distances,
+                                                            equal_var=False)
+
+    # 返回结果
+    return {
+        "special_to_previous_distances": {
+            "mean": special_to_previous_mean,
+            "std": special_to_previous_std,
+            "count": len(special_to_previous_distances),
+        },
+        "previous_to_next_distances": {
+            "mean": previous_to_next_mean,
+            "std": previous_to_next_std,
+            "count": len(previous_to_next_distances),
+        },
+        "normal_distances": {
+            "mean": normal_mean,
+            "std": normal_std,
+            "count": len(normal_distances),
+        },
+        "t_test_to_previous": {
+            "t_statistic": t_stat_to_previous,
+            "p_value": p_value_to_previous,
+            "significant": p_value_to_previous < 0.05
+        },
+        "t_test_previous_next": {
+            "t_statistic": t_stat_previous_next,
+            "p_value": p_value_previous_next,
+            "significant": p_value_previous_next < 0.05
+        }
+    }
+
+
 def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_oddball",
                       changepoint_col="is_changepoint"):
     """
@@ -171,10 +265,12 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     special_indices = special_indices[(special_indices > 0) & (special_indices + 2 < hidden_states.shape[0])]
 
     # 计算特殊点到其下一个点的距离
-    special_to_next_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices], axis=1)
+    special_to_next_distances = np.linalg.norm(hidden_states[special_indices + 1] - hidden_states[special_indices],
+                                               axis=1)
 
     # 计算特殊点和特殊点后第二个点两者之间的距离
-    special_to_second_next_distances = np.linalg.norm(hidden_states[special_indices + 2] - hidden_states[special_indices], axis=1)
+    special_to_second_next_distances = np.linalg.norm(
+        hidden_states[special_indices + 2] - hidden_states[special_indices], axis=1)
 
     # 计算普通点之间的距离
     all_indices = test_data.index.to_numpy()
@@ -191,12 +287,14 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
 
     # 统计信息
     special_to_next_mean, special_to_next_std = np.mean(special_to_next_distances), np.std(special_to_next_distances)
-    special_to_second_next_mean, special_to_second_next_std = np.mean(special_to_second_next_distances), np.std(special_to_second_next_distances)
+    special_to_second_next_mean, special_to_second_next_std = np.mean(special_to_second_next_distances), np.std(
+        special_to_second_next_distances)
     normal_mean, normal_std = np.mean(normal_distances), np.std(normal_distances)
 
     # 进行 t 检验
     t_stat_to_next, p_value_to_next = stats.ttest_ind(special_to_next_distances, normal_distances, equal_var=False)
-    t_stat_to_second_next, p_value_to_second_next = stats.ttest_ind(special_to_second_next_distances, normal_distances, equal_var=False)
+    t_stat_to_second_next, p_value_to_second_next = stats.ttest_ind(special_to_second_next_distances, normal_distances,
+                                                                    equal_var=False)
 
     # 返回结果
     return {
@@ -226,6 +324,104 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
             "significant": p_value_to_second_next < 0.05
         }
     }
+
+
+
+
+def plot_distance_sub_csv_comparison(oddball_data, changepoint_data, save_path=None):
+    """
+    绘制 Oddball 和 Changepoint 的距离比较图，并标注 t 值和 p 值。
+
+    :param oddball_data: 包含 Oddball 数据的字典
+    :param changepoint_data: 包含 Changepoint 数据的字典
+    :param save_path: 图表保存路径，如果为 None 则直接显示图表
+    """
+    # 提取数据
+    labels = ["Oddball", "Changepoint"]
+    special_to_previous_means = [
+        oddball_data["special_to_previous_distances"]["mean"],
+        changepoint_data["special_to_previous_distances"]["mean"]
+    ]
+    special_to_previous_stds = [
+        oddball_data["special_to_previous_distances"]["std"],
+        changepoint_data["special_to_previous_distances"]["std"]
+    ]
+    previous_to_next_means = [
+        oddball_data["previous_to_next_distances"]["mean"],
+        changepoint_data["previous_to_next_distances"]["mean"]
+    ]
+    previous_to_next_stds = [
+        oddball_data["previous_to_next_distances"]["std"],
+        changepoint_data["previous_to_next_distances"]["std"]
+    ]
+    normal_means = [
+        oddball_data["normal_distances"]["mean"],
+        changepoint_data["normal_distances"]["mean"]
+    ]
+    normal_stds = [
+        oddball_data["normal_distances"]["std"],
+        changepoint_data["normal_distances"]["std"]
+    ]
+    t_values_to_previous = [
+        oddball_data["t_test_to_previous"]["t_statistic"],
+        changepoint_data["t_test_to_previous"]["t_statistic"]
+    ]
+    p_values_to_previous = [
+        oddball_data["t_test_to_previous"]["p_value"],
+        changepoint_data["t_test_to_previous"]["p_value"]
+    ]
+    t_values_previous_next = [
+        oddball_data["t_test_previous_next"]["t_statistic"],
+        changepoint_data["t_test_previous_next"]["t_statistic"]
+    ]
+    p_values_previous_next = [
+        oddball_data["t_test_previous_next"]["p_value"],
+        changepoint_data["t_test_previous_next"]["p_value"]
+    ]
+
+    # 设置图形
+    x = np.arange(len(labels))  # x轴的位置
+    width = 0.2  # 柱状图宽度
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # 绘制柱状图
+    ax.bar(x - width, special_to_previous_means, width, yerr=special_to_previous_stds, label="Special to Previous",
+           color="orange", capsize=5)
+    ax.bar(x, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
+    ax.bar(x + width, previous_to_next_means, width, yerr=previous_to_next_stds, label="Previous to Next", color="green",
+           capsize=5)
+
+    # 添加 t 值和 p 值
+    for i, label in enumerate(labels):
+        ax.text(
+            x[i] - width, special_to_previous_means[i] + special_to_previous_stds[i] + 10,
+            f"t={t_values_to_previous[i]:.2f}\np={p_values_to_previous[i]:.2e}",
+            ha="center", va="bottom", fontsize=10, color="black"
+        )
+        ax.text(
+            x[i] + width, previous_to_next_means[i] + previous_to_next_stds[i] + 10,
+            f"t={t_values_previous_next[i]:.2f}\np={p_values_previous_next[i]:.2e}",
+            ha="center", va="bottom", fontsize=10, color="black"
+        )
+
+    # 图表设置
+    ax.set_xlabel("Distance Type", fontsize=12)
+    ax.set_ylabel("Mean Distance", fontsize=12)
+    ax.set_title("Comparison of Special and Normal Distances", fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
+
+    # 坐标轴范围固定为 0 到 300
+    ax.set_ylim(0, 300)
+
+    # 保存或显示图表
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
 
 
 def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
@@ -286,19 +482,23 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
     fig, ax = plt.subplots(figsize=(12, 6))
 
     # 绘制柱状图
-    ax.bar(x - width, special_to_next_means, width, yerr=special_to_next_stds, label="Special to Next", color="orange", capsize=5)
+    ax.bar(x - width, special_to_next_means, width, yerr=special_to_next_stds, label="Special to Next", color="orange",
+           capsize=5)
     ax.bar(x, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
-    ax.bar(x + width, special_to_second_next_means, width, yerr=special_to_second_next_stds, label="Special to Second Next", color="green", capsize=5)
+    ax.bar(x + width, special_to_second_next_means, width, yerr=special_to_second_next_stds,
+           label="Special to Second Next", color="green", capsize=5)
 
     # 添加 t 值和 p 值
     for i, label in enumerate(labels):
         ax.text(
-            x[i] - width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
+            x[i] - width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i],
+                              special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
             f"t={t_values_to_next[i]:.2f}\np={p_values_to_next[i]:.2e}",
             ha="center", va="bottom", fontsize=10, color="black"
         )
         ax.text(
-            x[i] + width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
+            x[i] + width, max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i],
+                              special_to_second_next_means[i] + special_to_second_next_stds[i]) + 0.1,
             f"t={t_values_to_second_next[i]:.2f}\np={p_values_to_second_next[i]:.2e}",
             ha="center", va="bottom", fontsize=10, color="black"
         )
@@ -313,7 +513,8 @@ def plot_distance_comparison(oddball_data, changepoint_data, save_path=None):
 
     # 坐标轴范围设置一致
     max_y = max(
-        max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i], special_to_second_next_means[i] + special_to_second_next_stds[i]) for i in range(len(labels))
+        max(special_to_next_means[i] + special_to_next_stds[i], normal_means[i] + normal_stds[i],
+            special_to_second_next_means[i] + special_to_second_next_stds[i]) for i in range(len(labels))
     )
     ax.set_ylim(0, max_y + 0.5)
 
@@ -565,11 +766,20 @@ if __name__ == "__main__":
     #                                plot_type="all",
     #                                save_path="../results/png/sub/hc/hidden_trajectories/mds_3_lstm_layers_1_hidden_16_input_489_combine.gif", )
 
-    result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
-                                  test_csv="../data/sub/hc/all_combine_sub.csv",
-                                  type="CP")
-    result_ob = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
-                                  test_csv="../data/sub/hc/all_combine_sub.csv",
-                                  type="OB")
+    # result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
+    #                               test_csv="../data/sub/hc/all_combine_sub.csv",
+    #                               type="CP")
+    # result_ob = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
+    #                               test_csv="../data/sub/hc/all_combine_sub.csv",
+    #                               type="OB")
+    #
+    # plot_distance_comparison(oddball_data=result_ob, changepoint_data=result_cp,
+    #                          save_path="../results/png/all_sub_distance.png")
 
-    plot_distance_comparison(oddball_data=result_ob, changepoint_data=result_cp, save_path="../results/png/all_sub_distance.png")
+    result_cp = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
+                                 type="CP")
+    result_ob = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
+                                 type="OB")
+    plot_distance_sub_csv_comparison(oddball_data=result_ob,
+                                     changepoint_data=result_cp,
+                                     save_path="../results/png/sub/hc/true_sub_distance.png")
