@@ -498,7 +498,6 @@ def merge_csv_rows_in_folder(folder_path,
         print("未找到符合条件的文件！")
 
 
-
 def update_is_changepoint_in_place(csv_file):
     """
     处理 CSV 文件中的数据：
@@ -554,4 +553,4 @@ if __name__ == "__main__":
     # merge_csv_rows_in_folder("../data/sub/hc",
     #                          "../data/sub/hc/all_combine_sub.csv")
 
-    update_is_changepoint_in_place("../data/sub/hc/all_combine_sub.csv")
+    update_is_changepoint_in_place("../data/sub/hc/404/ADL_B_404_DataCP_404.csv")

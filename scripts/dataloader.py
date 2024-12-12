@@ -370,10 +370,10 @@ if __name__ == "__main__":
     #                                       trail_type="combine")
     # df_valid_combine = generate_outcome_angle(df_valid_combine,
     #                                           trail_type="combine", )
-    df_test_combine = generate_dist_mean(all_n_trail=24000,
-                                         trail_type="combine")
-    df_test_combine = generate_outcome_angle(df_test_combine,
-                                             trail_type="combine", )
+    # df_test_combine = generate_dist_mean(all_n_trail=24000,
+    #                                      trail_type="combine")
+    # df_test_combine = generate_outcome_angle(df_test_combine,
+    #                                          trail_type="combine", )
 
     # csv_path = "../data/df_test_CP_100.csv"
     # df_OB_in_CP = pd.read_csv(csv_path)

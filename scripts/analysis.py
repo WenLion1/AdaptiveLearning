@@ -1,5 +1,7 @@
+import os
 import random
 
+import h5py
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -8,6 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import to_rgba
 from scipy.stats import ttest_ind, norm, stats
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
@@ -46,6 +49,106 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
+
+
+def perform_kmeans_clustering(data, k=3, plot_elbow=False, max_k=10):
+    """
+    对给定数据执行 K-Means 聚类，并选择性绘制肘部法则图。
+
+    :param data: numpy.ndarray，形状为 (n_samples, n_features) 的数据矩阵
+    :param k: int，聚类数（默认为 3）
+    :param plot_elbow: bool，是否绘制肘部法则图以选择最佳聚类数
+    :param max_k: int，用于肘部法则的最大聚类数（仅在 plot_elbow=True 时有效）
+    :return: tuple (cluster_labels, cluster_centers, sse)，分别是样本的簇标签，聚类中心，以及 SSE（总误差平方和）
+    """
+    if plot_elbow:
+        # 计算不同 k 值的 SSE
+        sse = []
+        k_values = range(1, max_k + 1)
+        for i in k_values:
+            kmeans = KMeans(n_clusters=i, random_state=42)
+            kmeans.fit(data)
+            sse.append(kmeans.inertia_)
+
+        # 绘制肘部法则图
+        plt.figure(figsize=(8, 5))
+        plt.plot(k_values, sse, marker='o')
+        plt.xlabel('Number of clusters (k)')
+        plt.ylabel('Sum of squared distances (SSE)')
+        plt.title('Elbow Method for Optimal k')
+        plt.show()
+
+    # 执行 K-Means 聚类
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    cluster_labels = kmeans.fit_predict(data)
+    cluster_centers = kmeans.cluster_centers_
+    sse = kmeans.inertia_
+
+    return cluster_labels, cluster_centers, sse
+
+
+def plot_clusters(reduced_states, labels, centers, dimensions=2, save_path=None):
+    """
+    绘制聚类结果，支持 2D 和 3D，可保存为图片或 GIF 动画。
+
+    :param reduced_states: 降维后的数据点 (n_samples, n_features)
+    :param labels: 聚类标签 (n_samples,)
+    :param centers: 聚类中心 (n_clusters, n_features)
+    :param dimensions: 绘图维度 (2 或 3)
+    :param save_path: 保存路径（2D 图保存为图片，3D 图保存为 .gif 文件）
+    """
+    unique_labels = np.unique(labels)
+
+    if dimensions == 2:
+        # 2D 图
+        plt.figure(figsize=(8, 6))
+        for label in unique_labels:
+            cluster_points = reduced_states[labels == label]
+            plt.scatter(cluster_points[:, 0], cluster_points[:, 1], label=f"Cluster {label}")
+        plt.scatter(centers[:, 0], centers[:, 1], color="black", marker="x", s=100, label="Centroids")
+        plt.legend()
+        plt.title("K-Means Clustering Results (2D)")
+        plt.xlabel("Principal Component 1")
+        plt.ylabel("Principal Component 2")
+        plt.grid(True)
+
+        # 保存或显示 2D 图
+        if save_path:
+            print(f"Saving 2D plot to {save_path}...")
+            plt.savefig(save_path, dpi=300)
+        else:
+            plt.show()
+
+    elif dimensions == 3:
+        # 3D 图
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        for label in unique_labels:
+            cluster_points = reduced_states[labels == label]
+            ax.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], label=f"Cluster {label}")
+
+        ax.scatter(centers[:, 0], centers[:, 1], centers[:, 2], color="black", marker="x", s=100, label="Centroids")
+        ax.set_title("K-Means Clustering Results (3D)")
+        ax.set_xlabel("Component 1")
+        ax.set_ylabel("Component 2")
+        ax.set_zlabel("Component 3")
+        ax.legend()
+
+        # 保存为 GIF 动画
+        if save_path and save_path.endswith(".gif"):
+            def update(frame):
+                ax.view_init(elev=30, azim=frame)
+                return fig,
+
+            anim = FuncAnimation(fig, update, frames=np.arange(0, 360, 2), interval=50)
+            print(f"Saving 3D animation to {save_path}...")
+            anim.save(save_path, writer="pillow", fps=20)
+        else:
+            plt.show()
+
+    else:
+        raise ValueError("Only 2D or 3D plotting is supported.")
 
 
 def svm_hidden_states(hidden_states_dir, test_size=0.2):
@@ -191,7 +294,8 @@ def sub_csv_distance(csv_path, type):
     # 统计信息
     special_to_previous_mean, special_to_previous_std = np.mean(special_to_previous_distances), np.std(
         special_to_previous_distances)
-    previous_to_next_mean, previous_to_next_std = np.mean(previous_to_next_distances), np.std(previous_to_next_distances)
+    previous_to_next_mean, previous_to_next_std = np.mean(previous_to_next_distances), np.std(
+        previous_to_next_distances)
     normal_mean, normal_std = np.mean(normal_distances), np.std(normal_distances)
 
     # t 检验
@@ -326,8 +430,6 @@ def compare_distances(hidden_states_dir, test_csv, type="OB", oddball_col="is_od
     }
 
 
-
-
 def plot_distance_sub_csv_comparison(oddball_data, changepoint_data, save_path=None):
     """
     绘制 Oddball 和 Changepoint 的距离比较图，并标注 t 值和 p 值。
@@ -389,7 +491,8 @@ def plot_distance_sub_csv_comparison(oddball_data, changepoint_data, save_path=N
     ax.bar(x - width, special_to_previous_means, width, yerr=special_to_previous_stds, label="Special to Previous",
            color="orange", capsize=5)
     ax.bar(x, normal_means, width, yerr=normal_stds, label="Normal", color="blue", capsize=5)
-    ax.bar(x + width, previous_to_next_means, width, yerr=previous_to_next_stds, label="Previous to Next", color="green",
+    ax.bar(x + width, previous_to_next_means, width, yerr=previous_to_next_stds, label="Previous to Next",
+           color="green",
            capsize=5)
 
     # 添加 t 值和 p 值
@@ -531,16 +634,21 @@ def plot_hidden_state_trajectories(hidden_states_dir,
                                    reduction_type="PCA",
                                    dimensions=3,
                                    plot_type="all",  # 'all', 'normal', 'special'
-                                   save_path=None):
+                                   type="combine",
+                                   save_path=None,
+                                   is_line=False):
     """
     绘制隐藏层状态在 2D 或 3D 空间的运动轨迹，并染色和添加旋转动画。
+    当 is_line 为 True 时，绘制特殊点和下一个普通点之间的连线。
 
     :param hidden_states_dir: 隐藏层存储地址
     :param test_csv: RNN 测试时使用的 CSV 数据集
     :param reduction_type: 降维方法 ("PCA" 或 "MDS")
     :param dimensions: 降维到的维度 (2 或 3)
     :param plot_type: 绘制点类型 ('all', 'normal', 'special')
+    :param type: 绘制点的类型 ('combine', 'CP', 'OB')
     :param save_path: 图像或动画保存路径 (.gif 或 .mp4)
+    :param is_line: 是否绘制特殊点和下一个普通点之间的连线
     :return: None
     """
 
@@ -598,15 +706,24 @@ def plot_hidden_state_trajectories(hidden_states_dir,
     point_colors = []
     for idx in selected_indices:
         if plot_type == "all":
-            # 'all' 情况下，所有 is_changepoint 染红，所有 is_oddball 染蓝
-            if idx in test_data.index[(is_cp == 1) | (is_cp == 0)]:
-                point_colors.append('#FF0000')  # CP (红色)
-            elif idx in test_data.index[(is_ob == 1) | (is_ob == 0)]:
-                point_colors.append('#0000FF')  # OB (蓝色)
-            else:
-                point_colors.append('#808080')  # 普通点 (灰色)
+            if type == "combine":
+                if idx in test_data.index[(is_cp == 1) | (is_cp == 0)]:
+                    point_colors.append('#FF0000')  # CP (红色)
+                elif idx in test_data.index[(is_ob == 1) | (is_ob == 0)]:
+                    point_colors.append('#0000FF')  # OB (蓝色)
+                else:
+                    point_colors.append('#808080')  # 普通点 (灰色)
+            elif type == "CP":
+                if idx in test_data.index[(is_cp == 1)]:
+                    point_colors.append('#FF0000')  # CP (红色)
+                else:
+                    point_colors.append('#808080')  # 普通点 (灰色)
+            elif type == "OB":
+                if idx in test_data.index[(is_ob == 1)]:
+                    point_colors.append('#0000FF')  # OB (蓝色)
+                else:
+                    point_colors.append('#808080')  # 普通点 (灰色)
         elif plot_type == "normal":
-            # 'normal' 情况下，is_changepoint = 0 染红，is_oddball = 0 染蓝
             if idx in test_data.index[(is_cp == 0)]:
                 point_colors.append('#FF0000')  # Normal - CP (红色)
             elif idx in test_data.index[(is_ob == 0)]:
@@ -614,7 +731,6 @@ def plot_hidden_state_trajectories(hidden_states_dir,
             else:
                 point_colors.append('#808080')  # 普通点 (灰色)
         else:
-            # 'special' 情况下，is_changepoint = 1 染红，is_oddball = 1 染蓝
             if idx in test_data.index[(is_cp == 1)]:
                 point_colors.append('#FF0000')  # CP (红色)
             elif idx in test_data.index[(is_ob == 1)]:
@@ -622,11 +738,25 @@ def plot_hidden_state_trajectories(hidden_states_dir,
             else:
                 point_colors.append('#808080')  # 普通点 (灰色)
 
+    # 绘制点
     scatter = None
     if dimensions == 3:
         scatter = ax.scatter(coords[0], coords[1], coords[2], c=point_colors, s=50, edgecolors='k')
     else:
-        ax.scatter(coords[0], coords[1], c=point_colors, s=50, edgecolors='k')
+        scatter = ax.scatter(coords[0], coords[1], c=point_colors, s=50, edgecolors='k')
+
+    # 如果 is_line 为 True，绘制特殊点和下一个普通点的连线
+    if is_line and test_csv:
+        for idx in test_data.index[(is_cp == 1) | (is_ob == 1)]:  # 筛选特殊点
+            next_idx = idx + 1
+            if next_idx < len(hidden_states_reduced):  # 确保索引不越界
+                x_values = [hidden_states_reduced[idx, 0], hidden_states_reduced[next_idx, 0]]
+                y_values = [hidden_states_reduced[idx, 1], hidden_states_reduced[next_idx, 1]]
+                if dimensions == 3:
+                    z_values = [hidden_states_reduced[idx, 2], hidden_states_reduced[next_idx, 2]]
+                    ax.plot(x_values, y_values, z_values, color='red', linestyle='-', linewidth=2)
+                else:
+                    ax.plot(x_values, y_values, color='red', linestyle='-', linewidth=2)
 
     # 添加图例
     legend_elements = [
@@ -655,6 +785,166 @@ def plot_hidden_state_trajectories(hidden_states_dir,
         plt.savefig(save_path, dpi=300)
     else:
         plt.show()
+
+
+def plot_average_hidden_state_trajectories_from_files(folder_path,
+                                                      dimensions=3,
+                                                      test_csv=None,
+                                                      save_path=None):
+    """
+    从文件夹中加载所有文件的数据，分别进行 PCA 降维后取平均，
+    根据测试集标注 changepoint 和 oddball 点，绘制轨迹。
+    2D 保存最终静态图像，3D 动态显示或保存动画。
+
+    :param folder_path: 包含数据文件的文件夹路径
+    :param dimensions: 降维后的维度，支持 2 或 3
+    :param test_csv: 测试集 CSV 文件路径，包含 is_changepoint 和 is_oddball 列
+    :param save_path: 图像或动画保存路径 (.gif 或 .mp4)，为 None 则直接显示图像
+    :return: None
+    """
+    if dimensions not in [2, 3]:
+        raise ValueError("dimensions 参数只能是 2 或 3")
+
+    # 获取文件夹中的所有文件
+    files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if
+             os.path.isfile(os.path.join(folder_path, f))]
+    if not files:
+        raise ValueError("文件夹中没有找到任何文件")
+
+    # 存储所有数据
+    hidden_states_list = []
+
+    # 加载每个文件中的数据
+    for file_path in files:
+        try:
+            data = torch.load(file_path).numpy()  # 加载为 NumPy 数组
+            hidden_states_list.append(data)
+        except Exception as e:
+            print(f"文件 {file_path} 无法加载为 NumPy 数组，错误：{e}")
+            continue
+
+    if not hidden_states_list:
+        raise ValueError("所有文件均无法加载为有效数据")
+
+    # 检查数据维度一致性
+    sample_shape = hidden_states_list[0].shape
+    for hs in hidden_states_list:
+        if hs.shape != sample_shape:
+            raise ValueError(f"所有数据形状必须一致，{hs.shape} 与 {sample_shape} 不匹配")
+
+    # 对每个隐藏状态进行 PCA 降维
+    reduced_states_list = []
+    for hidden_states in hidden_states_list:
+        pca = PCA(n_components=dimensions)
+        reduced_states = pca.fit_transform(hidden_states)
+        reduced_states_list.append(reduced_states)
+
+    # 计算所有降维结果的平均值
+    reduced_states_average = np.mean(reduced_states_list, axis=0)
+
+    # 分离坐标
+    coords = [reduced_states_average[:, i] for i in range(dimensions)]
+
+    # 如果提供了测试集 CSV，加载并读取标记
+    is_changepoint = None
+    is_oddball = None
+    if test_csv:
+        test_data = pd.read_csv(test_csv)
+        is_changepoint = test_data["is_changepoint"].values
+        is_oddball = test_data["is_oddball"].values
+
+    # 固定坐标轴范围
+    x_min, x_max = coords[0].min(), coords[0].max()
+    y_min, y_max = coords[1].min(), coords[1].max()
+    if dimensions == 3:
+        z_min, z_max = coords[2].min(), coords[2].max()
+
+    if dimensions == 2:
+        # 绘制 2D 图像
+        fig, ax = plt.subplots(figsize=(10, 7))
+        ax.set_title("2D Average Hidden State Trajectory")
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+
+        # 绘制所有点和特殊点连线
+        for i in range(len(coords[0])):
+            color = "gray"  # 默认普通点为灰色
+            if test_csv and is_changepoint[i] == 1:
+                color = "red"
+            elif test_csv and is_oddball[i] == 1:
+                color = "blue"
+
+            ax.scatter(coords[0][i], coords[1][i], color=color, s=50)
+
+            if i < len(coords[0]) - 1 and (is_changepoint[i] == 1 or is_oddball[i] == 1):
+                line_color = "red" if is_changepoint[i] == 1 else "blue"
+                ax.plot([coords[0][i], coords[0][i + 1]],
+                        [coords[1][i], coords[1][i + 1]],
+                        color=line_color)
+
+        # 保存或显示图像
+        if save_path:
+            plt.savefig(save_path, dpi=300)
+            print(f"2D 图像已保存到 {save_path}")
+        else:
+            plt.show()
+
+    elif dimensions == 3:
+        # 初始化 3D 图像
+        fig = plt.figure(figsize=(10, 7))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_title("3D Average Hidden State Trajectory")
+        ax.set_xlabel("PC1")
+        ax.set_ylabel("PC2")
+        ax.set_zlabel("PC3")
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+
+        # 动态绘制函数
+        def update(frame):
+            ax.cla()
+            ax.set_title("3D Average Hidden State Trajectory")
+            ax.set_xlabel("PC1")
+            ax.set_ylabel("PC2")
+            ax.set_zlabel("PC3")
+            ax.set_xlim(x_min, x_max)
+            ax.set_ylim(y_min, y_max)
+            ax.set_zlim(z_min, z_max)
+            ax.view_init(elev=30, azim=frame)
+
+            for i in range(frame):
+                color = "gray"
+                if test_csv and is_changepoint[i] == 1:
+                    color = "red"
+                elif test_csv and is_oddball[i] == 1:
+                    color = "blue"
+
+                ax.scatter(coords[0][i], coords[1][i], coords[2][i], color=color, s=50)
+
+                if i < frame - 1 and (is_changepoint[i] == 1 or is_oddball[i] == 1):
+                    line_color = "red" if is_changepoint[i] == 1 else "blue"
+                    ax.plot([coords[0][i], coords[0][i + 1]],
+                            [coords[1][i], coords[1][i + 1]],
+                            [coords[2][i], coords[2][i + 1]],
+                            color=line_color)
+
+        # 创建动画
+        anim = FuncAnimation(fig, update, frames=len(coords[0]), interval=300, repeat=False)
+
+        # 保存或显示动画
+        if save_path:
+            print(f"Saving 3D animation to {save_path}...")
+            if save_path.endswith(".gif"):
+                anim.save(save_path, writer="pillow", fps=5)
+            elif save_path.endswith(".mp4"):
+                anim.save(save_path, writer="ffmpeg", fps=5)
+            else:
+                raise ValueError("保存路径必须以 '.gif' 或 '.mp4' 结尾")
+        else:
+            plt.show()
 
 
 def get_trial_vars_from_pes_cannon(noise,
@@ -759,13 +1049,17 @@ def get_trial_vars_from_pes_cannon(noise,
 
 
 if __name__ == "__main__":
-    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
-    #                                test_csv="../data/sub/hc/all_combine_sub.csv",
-    #                                reduction_type="MDS",
-    #                                dimensions=3,
-    #                                plot_type="all",
-    #                                save_path="../results/png/sub/hc/hidden_trajectories/mds_3_lstm_layers_1_hidden_16_input_489_combine.gif", )
+    # 隐藏层轨迹
+    plot_hidden_state_trajectories(hidden_states_dir="../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt",
+                                   test_csv="../data/240_rule/df_100_120_CP.csv",
+                                   reduction_type="PCA",
+                                   dimensions=3,
+                                   plot_type="all",
+                                   type="CP",
+                                   is_line=True,
+                                   save_path="../results/png/240_rule/df_100_120_PCA_3.gif", )
 
+    # # 距离图
     # result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
     #                               test_csv="../data/sub/hc/all_combine_sub.csv",
     #                               type="CP")
@@ -776,10 +1070,38 @@ if __name__ == "__main__":
     # plot_distance_comparison(oddball_data=result_ob, changepoint_data=result_cp,
     #                          save_path="../results/png/all_sub_distance.png")
 
-    result_cp = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
-                                 type="CP")
-    result_ob = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
-                                 type="OB")
-    plot_distance_sub_csv_comparison(oddball_data=result_ob,
-                                     changepoint_data=result_cp,
-                                     save_path="../results/png/sub/hc/true_sub_distance.png")
+    # # 被试距离图
+    # result_cp = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
+    #                              type="CP")
+    # result_ob = sub_csv_distance(csv_path="../data/sub/hc/all_combine_sub.csv",
+    #                              type="OB")
+    # plot_distance_sub_csv_comparison(oddball_data=result_ob,
+    #                                  changepoint_data=result_cp,
+    #                                  save_path="../results/png/sub/hc/true_sub_distance.png")
+
+    # # 平均隐藏层轨迹
+    # plot_average_hidden_state_trajectories_from_files(folder_path="../hidden/10/404/CP",
+    #                                                   dimensions=2,
+    #                                                   test_csv="../data/sub/hc/404/ADL_B_404_DataCP_404.csv",
+    #                                                   save_path="../results/png/10/404/average_hidden_states_2.png")
+
+    # # 聚族
+    # data = torch.load("../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt").numpy()
+    # pca = PCA(n_components=3)
+    # reduced_states = pca.fit_transform(data)
+    #
+    # labels, centers, sse = perform_kmeans_clustering(reduced_states,
+    #                                                  k=3,
+    #                                                  plot_elbow=True,
+    #                                                  max_k=10, )
+    # plot_clusters(reduced_states,
+    #               labels,
+    #               centers,
+    #               dimensions=3,
+    #               save_path="../results/png/240_rule/df_100_120_PCA_3.gif")
+    #
+    # print("每个样本的簇标签:")
+    # print(labels)
+    # print("聚类中心:")
+    # print(centers)
+    # print(f"误差平方和 (SSE): {sse}")

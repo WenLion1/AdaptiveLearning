@@ -65,7 +65,7 @@ def paint_table(csv_path,
     plt.xlabel(f'Trial (0 to {data_len})')
     plt.ylabel('Angle (0 to 400)')
     plt.title(f'{save_name}')
-    plt.xlim(0, 480)  # 设置 x 轴范围
+    plt.xlim(0, 240)  # 设置 x 轴范围
     plt.ylim(0, 400)  # 设置 y 轴范围
     plt.legend(loc='lower right')  # 显示图例并设置位置
     plt.grid()
@@ -445,9 +445,9 @@ def delete_file(folder_path,
 
 
 if __name__ == "__main__":
-    csv_path = "../results/combine_UNKNOWN_rnn_layers_1_hidden_16_input_489_cos.csv"
-    saving_name = "combine_all_sub"
-    saving_path = "../results/png/sub/hc/hidden_trajectories/"
+    csv_path = "../results/combine_CP_rnn_layers_1_hidden_16_input_489_10_100_120.csv"
+    saving_name = "combine_CP_10_100_120"
+    saving_path = "../results/png/10"
     paint_table(csv_path=csv_path,
                 save_name=saving_name,
                 save_path=saving_path,
