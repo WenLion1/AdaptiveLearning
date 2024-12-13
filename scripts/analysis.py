@@ -9,6 +9,7 @@ import torch
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import to_rgba
+from scipy.spatial.distance import pdist, squareform
 from scipy.stats import ttest_ind, norm, stats
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -16,6 +17,8 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
+import seaborn as sns
+
 
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
@@ -1041,23 +1044,34 @@ def get_trial_vars_from_pes_cannon(noise,
             errBased_LR[i] = errBased_RU[i] + errBased_pCha[i] - errBased_RU[i] * errBased_pCha[i]
         else:
             errBased_LR[i] = errBased_RU[i] - errBased_RU[i] * errBased_pCha[i]
-
-    # 计算模型更新
+g
     errBased_UP = errBased_LR * PE
 
     return errBased_pCha, errBased_RU, errBased_LR, errBased_UP
 
 
+def pairewise_distance_matrix(x,
+                              saving_path):
+    condensed_dist_matrix = pdist(x, metric='euclidean')
+
+    dissimilarity_matrix = squareform(condensed_dist_matrix)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(dissimilarity_matrix, annot=True, fmt=".2f", cmap="viridis")
+    plt.title("Dissimilarity Matrix")  # 设置标题
+    plt.show()  # 显示图形
+
+
 if __name__ == "__main__":
-    # 隐藏层轨迹
-    plot_hidden_state_trajectories(hidden_states_dir="../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt",
-                                   test_csv="../data/240_rule/df_100_120_CP.csv",
-                                   reduction_type="PCA",
-                                   dimensions=3,
-                                   plot_type="all",
-                                   type="CP",
-                                   is_line=True,
-                                   save_path="../results/png/240_rule/df_100_120_PCA_3.gif", )
+    # # 隐藏层轨迹
+    # plot_hidden_state_trajectories(hidden_states_dir="../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt",
+    #                                test_csv="../data/240_rule/df_100_120_CP.csv",
+    #                                reduction_type="PCA",
+    #                                dimensions=3,
+    #                                plot_type="all",
+    #                                type="CP",
+    #                                is_line=True,
+    #                                save_path="../results/png/240_rule/df_100_120_PCA_3.gif", )
 
     # # 距离图
     # result_cp = compare_distances(hidden_states_dir="../hidden/3_10_42_rnn_layers_1_hidden_16_input_489_combine.pt",
@@ -1105,3 +1119,8 @@ if __name__ == "__main__":
     # print("聚类中心:")
     # print(centers)
     # print(f"误差平方和 (SSE): {sse}")
+
+    # 不相似性矩阵
+    hidden_states = torch.load("../hidden/10/403/CP/rnn_layers_1_hidden_16_input_489_CP_10.pt").numpy()
+    pairewise_distance_matrix(hidden_states,
+                              saving_path="")
