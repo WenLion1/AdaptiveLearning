@@ -19,7 +19,6 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 import seaborn as sns
 
-
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score
@@ -1044,22 +1043,60 @@ def get_trial_vars_from_pes_cannon(noise,
             errBased_LR[i] = errBased_RU[i] + errBased_pCha[i] - errBased_RU[i] * errBased_pCha[i]
         else:
             errBased_LR[i] = errBased_RU[i] - errBased_RU[i] * errBased_pCha[i]
-g
+
     errBased_UP = errBased_LR * PE
 
     return errBased_pCha, errBased_RU, errBased_LR, errBased_UP
 
 
-def pairewise_distance_matrix(x,
-                              saving_path):
-    condensed_dist_matrix = pdist(x, metric='euclidean')
+def pairwise_distance_matrix(x,
+                             saving_path,
+                             is_number_label=False, ):
+    """
+    绘制数据点之间的成对距离矩阵的热图。
 
+    :param is_number_label: 是否在坐标轴上显示坐标数字
+    :param x: 输入的二维数据，形状为 (n_samples, n_features)
+    :param saving_path: 保存热图的路径，如果为 None，则不保存
+    """
+    # 计算成对欧几里得距离并转化为方阵形式
+    condensed_dist_matrix = pdist(x, metric='euclidean')
     dissimilarity_matrix = squareform(condensed_dist_matrix)
 
+    # # 值和坐标反转
+    # dissimilarity_matrix = np.max(dissimilarity_matrix) - dissimilarity_matrix
+
+    # 绘制热图
     plt.figure(figsize=(10, 8))
-    sns.heatmap(dissimilarity_matrix, annot=True, fmt=".2f", cmap="viridis")
-    plt.title("Dissimilarity Matrix")  # 设置标题
-    plt.show()  # 显示图形
+    if is_number_label is True:
+        sns.heatmap(
+            dissimilarity_matrix,
+            annot=False,
+            fmt=".2f",
+            cmap="viridis",
+            xticklabels=np.arange(dissimilarity_matrix.shape[1]) + 1,
+            yticklabels=np.arange(dissimilarity_matrix.shape[0]) + 1,
+        )
+    else:
+        sns.heatmap(
+            dissimilarity_matrix,
+            annot=False,
+            fmt=".2f",
+            cmap="viridis",
+            xticklabels=False,
+            yticklabels=False,
+        )
+
+    # 设置坐标轴从 0 到 9
+    plt.gca().invert_yaxis()  # 反转纵轴
+    plt.title("Dissimilarity Matrix")
+    plt.xlabel("Trial")
+    plt.ylabel("Trial")
+    plt.show()
+
+    # 保存图像
+    if saving_path:
+        plt.savefig(saving_path)
 
 
 if __name__ == "__main__":
@@ -1122,5 +1159,7 @@ if __name__ == "__main__":
 
     # 不相似性矩阵
     hidden_states = torch.load("../hidden/10/403/CP/rnn_layers_1_hidden_16_input_489_CP_10.pt").numpy()
-    pairewise_distance_matrix(hidden_states,
-                              saving_path="")
+    subset_hidden_states = hidden_states[:20]
+    pairwise_distance_matrix(subset_hidden_states,
+                             saving_path="../results/png/10/403/dm_CP_10_20.png",
+                             is_number_label=True)
