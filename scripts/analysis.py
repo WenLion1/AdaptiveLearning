@@ -17,7 +17,6 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from scripts.test import evaluate_model
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
-import seaborn as sns
 
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
@@ -1051,7 +1050,8 @@ def get_trial_vars_from_pes_cannon(noise,
 
 def pairwise_distance_matrix(x,
                              saving_path,
-                             is_number_label=False, ):
+                             is_number_label=False,
+                             save_matrix_path=None, ):
     """
     绘制数据点之间的成对距离矩阵的热图。
 
@@ -1063,40 +1063,101 @@ def pairwise_distance_matrix(x,
     condensed_dist_matrix = pdist(x, metric='euclidean')
     dissimilarity_matrix = squareform(condensed_dist_matrix)
 
-    # # 值和坐标反转
-    # dissimilarity_matrix = np.max(dissimilarity_matrix) - dissimilarity_matrix
+    if save_matrix_path:
+        print(dissimilarity_matrix.shape)
+        print(dissimilarity_matrix)
+        np.save(save_matrix_path, condensed_dist_matrix)
+        print(f"Dissimilarity matrix saved to {save_matrix_path}")
 
     # 绘制热图
     plt.figure(figsize=(10, 8))
-    if is_number_label is True:
-        sns.heatmap(
-            dissimilarity_matrix,
-            annot=False,
-            fmt=".2f",
-            cmap="viridis",
-            xticklabels=np.arange(dissimilarity_matrix.shape[1]) + 1,
-            yticklabels=np.arange(dissimilarity_matrix.shape[0]) + 1,
-        )
-    else:
-        sns.heatmap(
-            dissimilarity_matrix,
-            annot=False,
-            fmt=".2f",
-            cmap="viridis",
-            xticklabels=False,
-            yticklabels=False,
-        )
+    plt.imshow(dissimilarity_matrix, cmap="viridis", aspect="auto")
+    plt.colorbar(label="Dissimilarity")
 
-    # 设置坐标轴从 0 到 9
+    if is_number_label:
+        # 如果需要在坐标轴显示坐标数字
+        plt.xticks(ticks=np.arange(dissimilarity_matrix.shape[1]),
+                   labels=np.arange(dissimilarity_matrix.shape[1]) + 1)
+        plt.yticks(ticks=np.arange(dissimilarity_matrix.shape[0]),
+                   labels=np.arange(dissimilarity_matrix.shape[0]) + 1)
+    else:
+        # 如果不需要显示坐标数字
+        plt.xticks([])
+        plt.yticks([])
+
     plt.gca().invert_yaxis()  # 反转纵轴
     plt.title("Dissimilarity Matrix")
     plt.xlabel("Trial")
     plt.ylabel("Trial")
-    plt.show()
 
     # 保存图像
     if saving_path:
-        plt.savefig(saving_path)
+        plt.savefig(saving_path, dpi=300)
+    plt.show()
+
+
+def batch_pairwise_distance_matrix(hidden_path,
+                                   saving_base_path,
+                                   matrix_base_path,
+                                   is_number_label):
+    """
+    批量计算和保存 RDM。
+
+    :param hidden_path: str, 文件夹路径，包含子文件夹，子文件夹中有 `remove` 文件夹，存储 pt 文件。
+    :param saving_base_path: str, 保存图像的基础路径。
+    :param matrix_base_path: str, 保存矩阵的基础路径。
+    :param is_number_label: bool, 是否在图像中显示数字标签。
+    """
+    # 遍历主文件夹下的所有子文件夹
+    for subdir, _, files in os.walk(hidden_path):
+        if "remove" in subdir:  # 筛选出包含 "remove" 的文件夹
+            pt_files = [f for f in files if f.endswith('.pt')]  # 筛选出 .pt 文件
+            if not pt_files:
+                print(f"在文件夹 {subdir} 中未找到任何 .pt 文件，跳过该文件夹。")
+                continue
+
+            # 获取当前子文件夹的数字名
+            subfolder_name = os.path.basename(os.path.dirname(subdir))
+
+            # 遍历每个 .pt 文件
+            for pt_file in pt_files:
+                # 加载 .pt 文件的路径
+                pt_file_path = os.path.join(subdir, pt_file)
+
+                # 加载 hidden_states
+                try:
+                    hidden_states = torch.load(pt_file_path).numpy()
+                except Exception as e:
+                    print(f"加载 {pt_file_path} 时出错: {e}")
+                    continue
+
+                # 构建保存路径
+                saving_path = os.path.join(
+                    saving_base_path,
+                    subfolder_name,
+                    f"model_dm_CP_228.png"
+                )
+                matrix_save_path = os.path.join(
+                    matrix_base_path,
+                    subfolder_name,
+                    "rdm",
+                    f"{pt_file.split('.pt')[0]}_228.npy"
+                )
+
+                # 确保保存目录存在
+                os.makedirs(os.path.dirname(saving_path), exist_ok=True)
+                os.makedirs(os.path.dirname(matrix_save_path), exist_ok=True)
+
+                # 调用 pairwise_distance_matrix 函数
+                print(f"正在处理 {pt_file_path}，保存到 {saving_path} 和 {matrix_save_path}...")
+                pairwise_distance_matrix(
+                    hidden_states,
+                    saving_path=saving_path,
+                    is_number_label=is_number_label,
+                    save_matrix_path=matrix_save_path
+                )
+
+    print("所有文件处理完成。")
 
 
 if __name__ == "__main__":
@@ -1157,9 +1218,15 @@ if __name__ == "__main__":
     # print(centers)
     # print(f"误差平方和 (SSE): {sse}")
 
-    # 不相似性矩阵
-    hidden_states = torch.load("../hidden/10/403/CP/rnn_layers_1_hidden_16_input_489_CP_10.pt").numpy()
-    subset_hidden_states = hidden_states[:20]
-    pairwise_distance_matrix(subset_hidden_states,
-                             saving_path="../results/png/10/403/dm_CP_10_20.png",
-                             is_number_label=True)
+    # # 不相似性矩阵
+    # hidden_states = torch.load("../hidden/sub/405/remove/rnn_layers_1_hidden_16_input_489_CP.pt").numpy()
+    # pairwise_distance_matrix(hidden_states,
+    #                          saving_path="../results/png/sub/hc/405/model_dm_CP_228.png",
+    #                          is_number_label=False,
+    #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
+
+    # 批量产生不相似性矩阵
+    batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
+                                   saving_base_path="../results/png/sub/hc",
+                                   matrix_base_path="../results/numpy/model/sub/hc",
+                                   is_number_label=False)

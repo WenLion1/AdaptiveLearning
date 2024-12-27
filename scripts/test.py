@@ -229,8 +229,8 @@ if __name__ == "__main__":
     #                model_type="lstm",
     #                input_size=10, )
 
-    evaluate_model(data_dir="../data/sub/hc/404/ADL_B_404_DataCP_404.csv",
-                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_1.h5",
+    evaluate_model(data_dir="../data/sub/hc/405/ADL_B_405_DataCP_405.csv",
+                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
                    results_dir="../results",
                    hidden_states_save_dir="../hidden",
                    is_save_hidden_state=1,
