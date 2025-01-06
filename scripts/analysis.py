@@ -14,6 +14,8 @@ from scipy.stats import ttest_ind, norm, stats
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+
 from scripts.test import evaluate_model
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
@@ -1063,9 +1065,11 @@ def pairwise_distance_matrix(x,
     condensed_dist_matrix = pdist(x, metric='euclidean')
     dissimilarity_matrix = squareform(condensed_dist_matrix)
 
+    # # 对 condensed_dist_matrix 进行标准化
+    # scaler = StandardScaler()
+    # condensed_dist_matrix = scaler.fit_transform(condensed_dist_matrix.reshape(-1, 1)).flatten()
+
     if save_matrix_path:
-        print(dissimilarity_matrix.shape)
-        print(dissimilarity_matrix)
         np.save(save_matrix_path, condensed_dist_matrix)
         print(f"Dissimilarity matrix saved to {save_matrix_path}")
 
@@ -1093,7 +1097,6 @@ def pairwise_distance_matrix(x,
     # 保存图像
     if saving_path:
         plt.savefig(saving_path, dpi=300)
-    plt.show()
 
 
 def batch_pairwise_distance_matrix(hidden_path,
@@ -1101,7 +1104,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                                    matrix_base_path,
                                    is_number_label):
     """
-    批量计算和保存 RDM。
+    先将模型按trials减去均值，再批量计算和保存 RDM。
 
     :param hidden_path: str, 文件夹路径，包含子文件夹，子文件夹中有 `remove` 文件夹，存储 pt 文件。
     :param saving_base_path: str, 保存图像的基础路径。
@@ -1127,6 +1130,13 @@ def batch_pairwise_distance_matrix(hidden_path,
                 # 加载 hidden_states
                 try:
                     hidden_states = torch.load(pt_file_path).numpy()
+                    mean_value = hidden_states[0].mean()
+
+                    mean_per_trial = hidden_states.mean(axis=1, keepdims=True)
+                    std_per_trial = hidden_states.std(axis=1, keepdims=True)
+                    # hidden_states = (hidden_states - mean_per_trial)
+                    hidden_states = (hidden_states - mean_per_trial) / (std_per_trial + 1e-8) # 加 1e-8 避免除以 0
+
                 except Exception as e:
                     print(f"加载 {pt_file_path} 时出错: {e}")
                     continue

@@ -6,8 +6,9 @@ import torch
 from matplotlib import pyplot as plt
 from scipy.io import loadmat
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import pearsonr
-
+from scipy.stats import pearsonr, spearmanr, ttest_1samp
+from sklearn.preprocessing import StandardScaler
+from mne.stats import permutation_cluster_test
 
 def compute_and_plot_dissimilarity_matrices(eeg_data,
                                             save_path,
@@ -81,7 +82,7 @@ def compute_eeg_model_rdm_correlation(eeg_data,
                                       trial_range=None,
                                       time_range=None):
     """
-    对 EEG 数据的每个时间点生成不相似性矩阵（RDM），
+    对 EEG 数据的每个时间点(减去均值后)生成不相似性矩阵（RDM），
     并与给定模型的隐藏层 RDM 进行相关分析，保存相关矩阵。
 
     参数:
@@ -115,7 +116,7 @@ def compute_eeg_model_rdm_correlation(eeg_data,
     print(f"Number of trials: {trials}")
     # 验证模型 RDM 的尺寸是否匹配
     if model_rdm.shape != (trials * trials / 2 - trials / 2,):
-        raise ValueError("The model RDM must have the shape (trials, trials) matching the trial range.")
+        raise ValueError("The model RDM must have the shape (trials * trials / 2 - trials / 2,) matching the trial range.")
 
     # 创建存储相关值的数组
     correlations = np.zeros(time_points)
@@ -127,12 +128,24 @@ def compute_eeg_model_rdm_correlation(eeg_data,
 
         # 转置数据，使得每一列表示一个 trial，形状变为 (trials, channels)
         data_at_time_t = data_at_time_t.T
+
+        mean_per_trial = data_at_time_t.mean(axis=1, keepdims=True)
+        std_per_trial = data_at_time_t.std(axis=1, keepdims=True)
+        data_at_time_t = (data_at_time_t - mean_per_trial) / (std_per_trial + 1e-8) # 加 1e-8 避免除以 0
+
+        # 将数据向右平移，并将第一个元素设置为随机值
+        data_at_time_t = np.roll(data_at_time_t, 1, axis=0)
+        data_at_time_t[0, :] = np.random.rand(channels)
+
         # 计算 EEG 的 RDM（不相似性矩阵），并转换为向量形式
         condensed_dist_matrix = pdist(data_at_time_t, metric='euclidean')
         eeg_rdm_vector = condensed_dist_matrix
-        condensed_dist_matrix = squareform(condensed_dist_matrix)
 
-        corr, _ = pearsonr(eeg_rdm_vector, model_rdm)
+        # # 对 condensed_dist_matrix 进行标准化
+        # scaler = StandardScaler()
+        # eeg_rdm_vector = scaler.fit_transform(condensed_dist_matrix.reshape(-1, 1)).flatten()
+
+        corr, _ = spearmanr(eeg_rdm_vector, model_rdm)
         correlations[t] = corr
 
     # 保存相关矩阵为图片
@@ -178,6 +191,7 @@ def generate_model_hidden_by_eeg(hidden_path,
 
     elif type == "OB":
         pass
+        raise NotImplementedError("OB 类型尚未实现")
 
     # 检查是否有数据被保留
     if adjusted_hidden.size == 0:
@@ -339,7 +353,7 @@ def batch_compute_eeg_model_rdm_correlation(extracted_eeg_data,
                 print(f"{eeg_filename} not found in extracted EEG data. Skipping...")
                 continue
 
-            eeg_data = extracted_eeg_data[eeg_filename]["eeg_data"]
+            eeg_data = extracted_eeg_data[eeg_filename]["eeg_data"]  # (99, 600, 458)
             epoch_numbers = extracted_eeg_data[eeg_filename]["fields"]["epochNumbers"][0]
 
             # 自动确定 trial_range
@@ -368,16 +382,20 @@ def batch_compute_eeg_model_rdm_correlation(extracted_eeg_data,
 
 
 def plot_npy_from_subfolders(folder_path,
-                             saving_path):
+                             saving_path,
+                             threshold=0.008):
     """
-    读取文件夹中所有子文件夹内的 .npy 文件，将它们的内容绘制到一张图中并保存。
+    读取文件夹中所有子文件夹内的 .npy 文件，将它们的内容绘制到一张图中，
+    并标记高相关性时间段（平均值超过阈值），结果保存。
 
     参数:
     - folder_path: str, 顶层文件夹路径，包含子文件夹
     - saving_path: str, 保存绘制结果的路径
+    - threshold: float, 用于标记高相关性时间段的平均值阈值
     """
     plt.figure(figsize=(12, 8))  # 设置图像大小
     legend_labels = []  # 用于存储图例标签
+    all_data = []  # 用于存储所有文件的数据
 
     # 遍历文件夹内的所有子文件夹
     for subfolder in sorted(os.listdir(folder_path)):
@@ -401,25 +419,90 @@ def plot_npy_from_subfolders(folder_path,
                     print(f"Invalid data format in {file_path}. Skipping...")
                     continue
 
+                all_data.append(data)  # 收集数据以计算平均值
                 # 绘制曲线
-                plt.plot(data, label=f"{subfolder}/{npy_file}")
+                plt.plot(data, alpha=0.5, label=f"{subfolder}/{npy_file}")
                 legend_labels.append(f"{subfolder}/{npy_file}")
             except Exception as e:
                 print(f"Error reading file {file_path}: {e}")
                 continue
 
-    # 设置图例和标题
-    # plt.legend(legend_labels, loc='upper right', fontsize='small', bbox_to_anchor=(1.1, 1))
+    # 计算每个时间点的平均值
+    if all_data:
+        all_data = np.array(all_data)
+        mean_values = all_data.mean(axis=0)
+
+        # 打印每个时间点的平均值
+        print("Time Point Average Values:")
+        print(mean_values)
+
+        # 绘制平均值曲线
+        plt.plot(mean_values, color='black', linewidth=2, label='Mean')
+
+        # 标记高相关性时间段
+        high_corr_indices = np.where(mean_values > threshold)[0]
+        if len(high_corr_indices) > 0:
+            plt.fill_between(
+                range(len(mean_values)),
+                mean_values,
+                where=mean_values > threshold,
+                color='red',
+                alpha=0.3,
+                label=f"High Correlation (>{threshold})"
+            )
+
+    # 图例和标题
     plt.title("Visualization of .npy Files from Subfolders")
-    plt.xlabel("Index")
+    plt.xlabel("Time Point")
     plt.ylabel("Value")
     plt.grid(True)
 
     # 保存图像
-    os.makedirs(os.path.dirname(saving_path), exist_ok=True)
-    plt.savefig(saving_path, bbox_inches='tight')
-    plt.close()
-    print(f"Plot saved at {saving_path}")
+    plt.savefig(saving_path)
+    plt.show()
+
+
+def analyze_significant_time_points(data, popmean=0, threshold=2.0, alpha=0.05, n_permutations=1000):
+    """
+    分析多个序列在不同时间点上的显著性，并通过集群置换检验进行多重比较校正。
+
+    参数:
+    - data: ndarray, 输入数据，形状为 (样本数, 时间点数)
+    - popmean: float, 零假设下的均值（默认值为 0）
+    - threshold: float, 集群置换检验的阈值
+    - alpha: float, 显著性水平（默认值为 0.05）
+    - n_permutations: int, 集群置换检验的置换次数
+
+    返回:
+    - T_obs: ndarray, 每个时间点的统计值（t 值）
+    - clusters: list of slices, 每个显著集群的时间范围
+    - cluster_p_values: ndarray, 每个集群的 p 值
+    """
+    # Step 1: 单样本 t 检验
+    t_values, _ = ttest_1samp(data, popmean=popmean, axis=0)
+
+    # Step 2: 集群置换检验
+    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
+        [data], n_permutations=n_permutations, threshold=threshold, tail=1
+    )
+
+    # Step 3: 可视化结果
+    times = np.arange(data.shape[1])  # 时间点
+    plt.figure(figsize=(10, 6))
+    plt.plot(times, T_obs, label="T-values", color="b")
+
+    for i_c, c in enumerate(clusters):
+        if cluster_p_values[i_c] <= alpha:  # 显著集群
+            plt.axvspan(times[c.start], times[c.stop - 1], color="r", alpha=0.3, label="Significant Cluster")
+
+    plt.xlabel("Time Points")
+    plt.ylabel("T-values")
+    plt.title("Significant Time Points Across Sequences")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    return T_obs, clusters, cluster_p_values
 
 
 if __name__ == "__main__":
@@ -443,8 +526,9 @@ if __name__ == "__main__":
     # else:
     #     print("epochNumber 字段未找到")
 
-    # extracted_eeg_data = read_mat_files_from_folder(folder_path="../data/eeg/hc",
-    #                                                 fields_to_extract=["epochNumbers"])
+    # 提取eeg数据
+    extracted_eeg_data = read_mat_files_from_folder(folder_path="../data/eeg/hc",
+                                                    fields_to_extract=["epochNumbers"])
 
     # compute_and_plot_dissimilarity_matrices(eeg_data=eeg_data,
     #                                         save_path="../results/eeg/403/rdm/CP",
@@ -471,12 +555,12 @@ if __name__ == "__main__":
     #                                   trial_range=(235, 463),
     #                                   time_range=time_range, )
 
-    # # 批量计算rdm
-    # batch_compute_eeg_model_rdm_correlation(extracted_eeg_data=extracted_eeg_data,
-    #                                         model_path="../results/numpy/model/sub/hc",
-    #                                         results_folder_path="../results/numpy/eeg_model/correlation",
-    #                                         time_range=(100, 351))
+    # 批量计算rdm
+    batch_compute_eeg_model_rdm_correlation(extracted_eeg_data=extracted_eeg_data,
+                                            model_path="../results/numpy/model/sub/hc",
+                                            results_folder_path="../results/numpy/eeg_model/correlation",
+                                            time_range=(100, 351))
 
     # 画所有的rdm相关图
     plot_npy_from_subfolders(folder_path="../results/numpy/eeg_model/correlation",
-                             saving_path="../results/png/sub/hc/all/rdm_all_correlation.png")
+                             saving_path="../results/png/sub/hc/all/rdm_all_correlation_roll.png")
