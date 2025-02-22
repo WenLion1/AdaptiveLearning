@@ -10,6 +10,7 @@ from scipy.stats import pearsonr, spearmanr, ttest_1samp
 from sklearn.preprocessing import StandardScaler
 from mne.stats import permutation_cluster_test
 
+
 def compute_and_plot_dissimilarity_matrices(eeg_data,
                                             save_path,
                                             trial_range=None,
@@ -116,7 +117,8 @@ def compute_eeg_model_rdm_correlation(eeg_data,
     print(f"Number of trials: {trials}")
     # 验证模型 RDM 的尺寸是否匹配
     if model_rdm.shape != (trials * trials / 2 - trials / 2,):
-        raise ValueError("The model RDM must have the shape (trials * trials / 2 - trials / 2,) matching the trial range.")
+        raise ValueError(
+            "The model RDM must have the shape (trials * trials / 2 - trials / 2,) matching the trial range.")
 
     # 创建存储相关值的数组
     correlations = np.zeros(time_points)
@@ -131,7 +133,7 @@ def compute_eeg_model_rdm_correlation(eeg_data,
 
         mean_per_trial = data_at_time_t.mean(axis=1, keepdims=True)
         std_per_trial = data_at_time_t.std(axis=1, keepdims=True)
-        data_at_time_t = (data_at_time_t - mean_per_trial) / (std_per_trial + 1e-8) # 加 1e-8 避免除以 0
+        data_at_time_t = (data_at_time_t - mean_per_trial) / (std_per_trial + 1e-8)  # 加 1e-8 避免除以 0
 
         # 将数据向右平移，并将第一个元素设置为随机值
         data_at_time_t = np.roll(data_at_time_t, 1, axis=0)
@@ -380,6 +382,8 @@ def batch_compute_eeg_model_rdm_correlation(extracted_eeg_data,
 
     print("All folders processed.")
 
+def batch_compute_eeg_model_rdm_correlation()
+
 
 def plot_npy_from_subfolders(folder_path,
                              saving_path,
@@ -462,7 +466,11 @@ def plot_npy_from_subfolders(folder_path,
     plt.show()
 
 
-def analyze_significant_time_points(data, popmean=0, threshold=2.0, alpha=0.05, n_permutations=1000):
+def analyze_significant_time_points(data,
+                                    popmean=0,
+                                    threshold=None,
+                                    alpha=0.05,
+                                    n_permutations=1000):
     """
     分析多个序列在不同时间点上的显著性，并通过集群置换检验进行多重比较校正。
 
@@ -478,6 +486,7 @@ def analyze_significant_time_points(data, popmean=0, threshold=2.0, alpha=0.05, 
     - clusters: list of slices, 每个显著集群的时间范围
     - cluster_p_values: ndarray, 每个集群的 p 值
     """
+
     # Step 1: 单样本 t 检验
     t_values, _ = ttest_1samp(data, popmean=popmean, axis=0)
 
@@ -485,6 +494,11 @@ def analyze_significant_time_points(data, popmean=0, threshold=2.0, alpha=0.05, 
     T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
         [data], n_permutations=n_permutations, threshold=threshold, tail=1
     )
+    print("T_obs: ", T_obs)
+    print("clusters: ", clusters)
+    print("cluster_p_values: ", cluster_p_values)
+    print("H0: ", H0)
+    asdasdad
 
     # Step 3: 可视化结果
     times = np.arange(data.shape[1])  # 时间点
@@ -503,6 +517,89 @@ def analyze_significant_time_points(data, popmean=0, threshold=2.0, alpha=0.05, 
     plt.show()
 
     return T_obs, clusters, cluster_p_values
+
+
+def load_and_concatenate_npy_files(folder_path):
+    """
+    读取指定文件夹及其子文件夹中的所有 .npy 文件，并将这些文件中的数组合并成一个二维数组。
+
+    :param folder_path: 包含 .npy 文件的文件夹路径
+    :return: 合并后的二维数组
+    """
+    # 初始化一个空列表来存储所有数组
+    all_arrays = []
+
+    # 遍历文件夹及其子文件夹
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith('.npy'):
+                # 构建完整的文件路径
+                file_path = os.path.join(root, file)
+                # 加载 .npy 文件中的数组
+                array = np.load(file_path)
+                # 将数组添加到列表中
+                all_arrays.append(array)
+
+    # 将所有数组合并成一个二维数组，每个一维数组作为一行
+    combined_data = np.vstack(all_arrays)
+
+    return combined_data
+
+
+# 检验函数
+def find_significant_periods(data, alpha=0.05, threshold=0.8):
+    """
+    找出时间段里大部分被试值显著大于0。
+
+    参数：
+    - data: numpy.ndarray, 形状为 (n_subjects, n_timepoints)
+    - alpha: 显著性水平，默认0.05
+    - threshold: 被试比例阈值，默认80%
+
+    返回：
+    - significant_timepoints: numpy.ndarray, 形状为 (n_timepoints,)
+    """
+    n_subjects = data.shape[0]
+    significant_timepoints = []
+
+    for t in range(data.shape[1]):
+        # 单样本t检验
+        t_stat, p_value = ttest_1samp(data[:, t], popmean=0, alternative='greater')
+
+        # 判断显著性（p值小于 alpha）并统计显著被试比例
+        if p_value < alpha:
+            proportion_significant = np.sum(data[:, t] > 0) / n_subjects
+            if proportion_significant >= threshold:
+                significant_timepoints.append(t)
+
+    significant_points = np.array(significant_timepoints)
+
+    # 可视化
+    timepoints = np.arange(data.shape[1])  # 时间点
+    mean_values = np.mean(data, axis=0)  # 每个时间点的平均值
+
+    plt.figure(figsize=(12, 6))
+
+    # 绘制均值曲线
+    plt.plot(timepoints, mean_values, label='Mean values', color='blue')
+
+    # 标记显著时间点
+    plt.scatter(significant_points, mean_values[significant_points],
+                color='red', label='Significant timepoints', zorder=5)
+
+    # 添加横线标记 0 位置
+    plt.axhline(y=0, color='gray', linestyle='--', linewidth=1)
+
+    # 图例和标题
+    plt.title('Significant Timepoints Visualization', fontsize=16)
+    plt.xlabel('Timepoints', fontsize=14)
+    plt.ylabel('Mean Value', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.grid(alpha=0.3)
+
+    plt.show()
+
+    return significant_points
 
 
 if __name__ == "__main__":
@@ -526,9 +623,9 @@ if __name__ == "__main__":
     # else:
     #     print("epochNumber 字段未找到")
 
-    # 提取eeg数据
-    extracted_eeg_data = read_mat_files_from_folder(folder_path="../data/eeg/hc",
-                                                    fields_to_extract=["epochNumbers"])
+    # # 提取eeg数据
+    # extracted_eeg_data = read_mat_files_from_folder(folder_path="../data/eeg/hc",
+    #                                                 fields_to_extract=["epochNumbers"])
 
     # compute_and_plot_dissimilarity_matrices(eeg_data=eeg_data,
     #                                         save_path="../results/eeg/403/rdm/CP",
@@ -555,12 +652,20 @@ if __name__ == "__main__":
     #                                   trial_range=(235, 463),
     #                                   time_range=time_range, )
 
-    # 批量计算rdm
-    batch_compute_eeg_model_rdm_correlation(extracted_eeg_data=extracted_eeg_data,
-                                            model_path="../results/numpy/model/sub/hc",
-                                            results_folder_path="../results/numpy/eeg_model/correlation",
-                                            time_range=(100, 351))
+    # # 批量计算rdm
+    # batch_compute_eeg_model_rdm_correlation(extracted_eeg_data=extracted_eeg_data,
+    #                                         model_path="../results/numpy/model/sub/hc",
+    #                                         results_folder_path="../results/numpy/eeg_model/correlation",
+    #                                         time_range=(100, 351))
+    #
+    # # 画所有的rdm相关图
+    # plot_npy_from_subfolders(folder_path="../results/numpy/eeg_model/correlation",
+    #                          saving_path="../results/png/sub/hc/all/rdm_all_correlation_roll.png")
 
-    # 画所有的rdm相关图
-    plot_npy_from_subfolders(folder_path="../results/numpy/eeg_model/correlation",
-                             saving_path="../results/png/sub/hc/all/rdm_all_correlation_roll.png")
+    data = load_and_concatenate_npy_files(folder_path="../results/numpy/eeg_model/correlation")
+    # analyze_significant_time_points(data=data,
+    #                                 threshold=None)
+
+    significant_points = find_significant_periods(data,
+                                                  threshold=0.7)
+    print(significant_points)

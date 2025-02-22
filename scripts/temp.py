@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.stats import vonmises
 
+import os
+import numpy as np
+import pandas as pd
+import mne
+import matplotlib.pyplot as plt
 
 def merge_csv_rows(csv1_path, csv2_path, output_path):
     """
@@ -24,6 +29,10 @@ def merge_csv_rows(csv1_path, csv2_path, output_path):
     print(f"合并完成，结果已保存到 {output_path}")
 
 if __name__ == "__main__":
-    merge_csv_rows(csv1_path="../data/sub/hc/403/ADL_B_403_DataCP_403.csv",
-                   csv2_path="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
-                   output_path="../data/sub/hc/403/combine_403.csv",)
+    # merge_csv_rows(csv1_path="../data/sub/hc/403/ADL_B_403_DataCP_403.csv",
+    #                csv2_path="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
+    #                output_path="../data/sub/hc/403/combine_403.csv",)
+
+    raw = mne.io.read_epochs_eeglab('C:/Learn/Project/bylw/eeg/2 remove channels + waterprint/lal-hc-453-task.set')
+
+    print(type(raw))
