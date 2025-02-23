@@ -9,6 +9,7 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import pearsonr, spearmanr, ttest_1samp
 from sklearn.preprocessing import StandardScaler
 from mne.stats import permutation_cluster_test
+from twisted.python.util import println
 
 
 def compute_and_plot_dissimilarity_matrices(eeg_data,
@@ -311,78 +312,125 @@ def read_mat_files_from_folder(folder_path,
     return results
 
 
-def batch_compute_eeg_model_rdm_correlation(extracted_eeg_data,
+# def batch_compute_eeg_model_rdm_correlation(extracted_eeg_data,
+#                                             model_path,
+#                                             results_folder_path,
+#                                             time_range, ):
+#     """
+#     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
+#
+#     参数:
+#     - folder_path: str, EEG 数据所在的文件夹路径
+#     - results_folder_path: str, 结果保存的顶层文件夹路径
+#     - time_range: tuple, 处理的时间点范围
+#     - fields_to_extract: list, 提取的字段，默认为 ["epochNumbers"]
+#     """
+#
+#     # 遍历文件夹内的所有数字子文件夹
+#     for subfolder in sorted(os.listdir(model_path)):
+#         subfolder_path = os.path.join(model_path, subfolder)
+#         if not os.path.isdir(subfolder_path) or not subfolder.isdigit():
+#             continue
+#
+#         print(f"Processing folder: {subfolder}")
+#
+#         # 获取 RDM 文件路径
+#         rdm_folder = os.path.join(subfolder_path, "rdm")
+#         if not os.path.exists(rdm_folder):
+#             print(f"No RDM folder in {subfolder}. Skipping...")
+#             continue
+#
+#         # 找到所有 .npy 文件
+#         rdm_files = [f for f in os.listdir(rdm_folder) if f.endswith(".npy")]
+#         if not rdm_files:
+#             print(f"No RDM .npy files in {rdm_folder}. Skipping...")
+#             continue
+#
+#         for rdm_file in rdm_files:
+#             model_rdm_path = os.path.join(rdm_folder, rdm_file)
+#             model_rdm = np.load(model_rdm_path)
+#
+#             # 构造 EEG 数据文件名
+#             eeg_filename = f"lal-hc-{subfolder}-task.mat"
+#             if eeg_filename not in extracted_eeg_data:
+#                 print(f"{eeg_filename} not found in extracted EEG data. Skipping...")
+#                 continue
+#
+#             eeg_data = extracted_eeg_data[eeg_filename]["eeg_data"]  # (99, 600, 458)
+#             epoch_numbers = extracted_eeg_data[eeg_filename]["fields"]["epochNumbers"][0]
+#
+#             # 自动确定 trial_range
+#             start_trial = next((i for i, x in enumerate(epoch_numbers) if x > 240), None)
+#             if start_trial is None:
+#                 print(f"No valid trial_range found for {eeg_filename}. Skipping...")
+#                 continue
+#             trial_range = (start_trial, len(epoch_numbers))
+#
+#             # 构造结果保存路径
+#             save_folder = os.path.join(results_folder_path, subfolder)
+#             os.makedirs(save_folder, exist_ok=True)
+#
+#             # 调用计算相关性的函数
+#             compute_eeg_model_rdm_correlation(
+#                 eeg_data=eeg_data,
+#                 model_rdm=model_rdm,
+#                 save_path=save_folder,
+#                 trial_range=trial_range,
+#                 time_range=time_range
+#             )
+#
+#             print(f"Processed: {model_rdm_path}, trial_range: {trial_range}")
+#
+#     print("All folders processed.")
+
+def computer_eeg_rdm(eeg_data,
+                     save_path,
+                     metric='euclidean', ):
+    """
+    计算eeg的rdm
+
+    :param metric:
+    :param eeg_data: (sub, trial, channel, time)
+    :param save_path:
+    :return:
+    """
+
+    sub_num, trial_num, channel_num, time_num = eeg_data.shape
+    rdm_results = np.zeros((sub_num, time_num, trial_num * (trial_num - 1) // 2))  # 存储结果
+
+    for sub in range(sub_num):
+        println("sub: ", sub)
+        for t in range(time_num):
+            println("time: ", t)
+            # 取出当前被试、当前时间点的数据 (trial × channel)
+            trial_features = eeg_data[sub, :, :, t]  # (trial, channel)
+
+            # 计算 RDM
+            rdm = pdist(trial_features, metric=metric)  # 计算 pairwise 距离
+            rdm_results[sub, t] = rdm  # 存储到结果矩阵
+    np.save(save_path, rdm_results)
+
+
+def batch_compute_eeg_model_rdm_correlation(eeg_path,
                                             model_path,
-                                            results_folder_path,
                                             time_range, ):
     """
     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
 
-    参数:
-    - folder_path: str, EEG 数据所在的文件夹路径
-    - results_folder_path: str, 结果保存的顶层文件夹路径
-    - time_range: tuple, 处理的时间点范围
-    - fields_to_extract: list, 提取的字段，默认为 ["epochNumbers"]
+    :param eeg_path:
+    :param model_path:
+    :param time_range:
+    :return:
     """
 
-    # 遍历文件夹内的所有数字子文件夹
-    for subfolder in sorted(os.listdir(model_path)):
-        subfolder_path = os.path.join(model_path, subfolder)
-        if not os.path.isdir(subfolder_path) or not subfolder.isdigit():
-            continue
+    eeg_data = np.load(eeg_path)
+    print("eeg数据现状为：", eeg_data.shape)  # (29, 48, 98, 851)
+    sub_num = eeg_data.shape[0]
+    for s in range(sub_num):
+        println("leave-one-out sub number :", s)
+        sub_eeg_data = np.setdiff1d(np.arange(0, sub_num), s)
 
-        print(f"Processing folder: {subfolder}")
-
-        # 获取 RDM 文件路径
-        rdm_folder = os.path.join(subfolder_path, "rdm")
-        if not os.path.exists(rdm_folder):
-            print(f"No RDM folder in {subfolder}. Skipping...")
-            continue
-
-        # 找到所有 .npy 文件
-        rdm_files = [f for f in os.listdir(rdm_folder) if f.endswith(".npy")]
-        if not rdm_files:
-            print(f"No RDM .npy files in {rdm_folder}. Skipping...")
-            continue
-
-        for rdm_file in rdm_files:
-            model_rdm_path = os.path.join(rdm_folder, rdm_file)
-            model_rdm = np.load(model_rdm_path)
-
-            # 构造 EEG 数据文件名
-            eeg_filename = f"lal-hc-{subfolder}-task.mat"
-            if eeg_filename not in extracted_eeg_data:
-                print(f"{eeg_filename} not found in extracted EEG data. Skipping...")
-                continue
-
-            eeg_data = extracted_eeg_data[eeg_filename]["eeg_data"]  # (99, 600, 458)
-            epoch_numbers = extracted_eeg_data[eeg_filename]["fields"]["epochNumbers"][0]
-
-            # 自动确定 trial_range
-            start_trial = next((i for i, x in enumerate(epoch_numbers) if x > 240), None)
-            if start_trial is None:
-                print(f"No valid trial_range found for {eeg_filename}. Skipping...")
-                continue
-            trial_range = (start_trial, len(epoch_numbers))
-
-            # 构造结果保存路径
-            save_folder = os.path.join(results_folder_path, subfolder)
-            os.makedirs(save_folder, exist_ok=True)
-
-            # 调用计算相关性的函数
-            compute_eeg_model_rdm_correlation(
-                eeg_data=eeg_data,
-                model_rdm=model_rdm,
-                save_path=save_folder,
-                trial_range=trial_range,
-                time_range=time_range
-            )
-
-            print(f"Processed: {model_rdm_path}, trial_range: {trial_range}")
-
-    print("All folders processed.")
-
-def batch_compute_eeg_model_rdm_correlation()
+        # for z in sub_eeg_data:
 
 
 def plot_npy_from_subfolders(folder_path,
@@ -662,10 +710,17 @@ if __name__ == "__main__":
     # plot_npy_from_subfolders(folder_path="../results/numpy/eeg_model/correlation",
     #                          saving_path="../results/png/sub/hc/all/rdm_all_correlation_roll.png")
 
-    data = load_and_concatenate_npy_files(folder_path="../results/numpy/eeg_model/correlation")
-    # analyze_significant_time_points(data=data,
-    #                                 threshold=None)
+    # data = load_and_concatenate_npy_files(folder_path="../results/numpy/eeg_model/correlation")
+    # # analyze_significant_time_points(data=data,
+    # #                                 threshold=None)
+    #
+    # significant_points = find_significant_periods(data,
+    #                                               threshold=0.7)
+    # print(significant_points)
 
-    significant_points = find_significant_periods(data,
-                                                  threshold=0.7)
-    print(significant_points)
+    data = np.load("../data/eeg/hc/eeg_preprocessing_data.npy")
+    computer_eeg_rdm(eeg_data=data,
+                     save_path="../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
+    # batch_compute_eeg_model_rdm_correlation(eeg_path="../data/eeg/hc/eeg_preprocessing_data.npy",
+    #                                         model_path="../results/numpy/model/sub/hc",
+    #                                         time_range=(100, 350),)

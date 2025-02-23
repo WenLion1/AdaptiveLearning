@@ -4,3 +4,4 @@ hidden/
 *.mp4
 *.gif
 data/eeg/
+results/numpy/eeg_rdm/
