@@ -144,8 +144,12 @@ def evaluate_model(data_dir,
 
     if is_save_hidden_state == 1:
         hidden_states = np.vstack(hidden_states)
+        hidden_states_save_dir += "/not_remove"
+        os.makedirs(hidden_states_save_dir, exist_ok=True)
+        print("隐藏层正保存至: ", os.path.join(hidden_states_save_dir,
+                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt"))
         torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
-                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}_1.pt"))
+                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt"))
 
     # 计算平均损失并打印
     average_loss = loss / len(dataloader_CP)
@@ -157,6 +161,8 @@ def evaluate_model(data_dir,
         ob_type = "CP"
     elif "Oddball" in base_filename:
         ob_type = "OB"
+    elif "combine" in base_filename:
+        ob_type = "combine"
     else:
         ob_type = "UNKNOWN"  # 如果都没有则标记为UNKNOWN
 
@@ -195,6 +201,7 @@ def batch_evaluate(data_folder_path,
         # 为当前子文件夹创建相应的结果保存路径
         subfolder_name = os.path.basename(subdir)
         current_results_dir = os.path.join(results_folder_path, subfolder_name)
+        current_hidden_dir = os.path.join(hidden_state_save_dir, subfolder_name)
         os.makedirs(current_results_dir, exist_ok=True)  # 创建子文件夹（如果尚不存在）
 
         # 遍历当前子文件夹中的每个 CSV 文件
@@ -202,11 +209,21 @@ def batch_evaluate(data_folder_path,
             data_dir = os.path.join(subdir, csv_file)  # 完整的 CSV 文件路径
             print(f"正在评估文件: {data_dir}")
 
+            if "DataCP" in csv_file:
+                test_type = "CP"
+            elif "DataOddball" in csv_file:
+                test_type = "OB"
+            elif "combine" in csv_file:
+                test_type = "combine"
+            else:
+                test_type = "unknown"
+
             # 调用评估模型函数
             evaluate_model(data_dir,
                            model_path,
                            current_results_dir,
-                           hidden_states_save_dir=hidden_state_save_dir,
+                           test_type=test_type,
+                           hidden_states_save_dir=current_hidden_dir,
                            model_type=model_type,
                            sequence_length=sequence_length,
                            input_size=input_size,
@@ -220,21 +237,21 @@ def batch_evaluate(data_folder_path,
 
 
 if __name__ == "__main__":
-    # batch_evaluate(data_folder_path="../data/sub/hc",
-    #                model_path="../models/240_rule/4_17_20_lstm_layers_3_hidden_1024_input_10.h5",
-    #                results_folder_path="../results/csv/sub/hc",
-    #                hidden_state_save_dir="../hidden",
-    #                is_save_hidden_state=0,
-    #                num_layers=3,
-    #                model_type="lstm",
-    #                input_size=10, )
-
-    evaluate_model(data_dir="../data/sub/hc/405/ADL_B_405_DataCP_405.csv",
+    batch_evaluate(data_folder_path="../data/sub/hc",
                    model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
-                   results_dir="../results",
-                   hidden_states_save_dir="../hidden",
+                   results_folder_path="../results/csv/sub/hc",
+                   hidden_state_save_dir="../hidden/sub/hc",
                    is_save_hidden_state=1,
-                   test_type="combine",
-                   model_type="rnn",
                    num_layers=1,
+                   model_type="rnn",
                    hidden_size=16,)
+
+    # evaluate_model(data_dir="../data/sub/hc/405/ADL_B_405_DataCP_405.csv",
+    #                model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
+    #                results_dir="../results",
+    #                hidden_states_save_dir="../hidden",
+    #                is_save_hidden_state=1,
+    #                test_type="combine",
+    #                model_type="rnn",
+    #                num_layers=1,
+    #                hidden_size=16,)

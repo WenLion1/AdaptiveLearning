@@ -1065,10 +1065,6 @@ def pairwise_distance_matrix(x,
     condensed_dist_matrix = pdist(x, metric='euclidean')
     dissimilarity_matrix = squareform(condensed_dist_matrix)
 
-    # # 对 condensed_dist_matrix 进行标准化
-    # scaler = StandardScaler()
-    # condensed_dist_matrix = scaler.fit_transform(condensed_dist_matrix.reshape(-1, 1)).flatten()
-
     if save_matrix_path:
         np.save(save_matrix_path, condensed_dist_matrix)
         print(f"Dissimilarity matrix saved to {save_matrix_path}")
@@ -1106,14 +1102,14 @@ def batch_pairwise_distance_matrix(hidden_path,
     """
     先将模型按trials减去均值，再批量计算和保存 RDM。
 
-    :param hidden_path: str, 文件夹路径，包含子文件夹，子文件夹中有 `remove` 文件夹，存储 pt 文件。
+    :param hidden_path: str, 文件夹路径，包含子文件夹，子文件夹中有 `not_remove` 文件夹，存储 pt 文件。
     :param saving_base_path: str, 保存图像的基础路径。
     :param matrix_base_path: str, 保存矩阵的基础路径。
     :param is_number_label: bool, 是否在图像中显示数字标签。
     """
     # 遍历主文件夹下的所有子文件夹
     for subdir, _, files in os.walk(hidden_path):
-        if "remove" in subdir:  # 筛选出包含 "remove" 的文件夹
+        if "not_remove" in subdir:  # 筛选出包含 "remove" 的文件夹
             pt_files = [f for f in files if f.endswith('.pt')]  # 筛选出 .pt 文件
             if not pt_files:
                 print(f"在文件夹 {subdir} 中未找到任何 .pt 文件，跳过该文件夹。")
@@ -1126,16 +1122,15 @@ def batch_pairwise_distance_matrix(hidden_path,
             for pt_file in pt_files:
                 # 加载 .pt 文件的路径
                 pt_file_path = os.path.join(subdir, pt_file)
-
                 # 加载 hidden_states
                 try:
                     hidden_states = torch.load(pt_file_path).numpy()
                     mean_value = hidden_states[0].mean()
 
-                    mean_per_trial = hidden_states.mean(axis=1, keepdims=True)
-                    std_per_trial = hidden_states.std(axis=1, keepdims=True)
-                    # hidden_states = (hidden_states - mean_per_trial)
-                    hidden_states = (hidden_states - mean_per_trial) / (std_per_trial + 1e-8) # 加 1e-8 避免除以 0
+                    # mean_per_trial = hidden_states.mean(axis=1, keepdims=True)
+                    # std_per_trial = hidden_states.std(axis=1, keepdims=True)
+                    # # hidden_states = (hidden_states - mean_per_trial)
+                    # hidden_states = (hidden_states - mean_per_trial) / (std_per_trial + 1e-8) # 加 1e-8 避免除以 0
 
                 except Exception as e:
                     print(f"加载 {pt_file_path} 时出错: {e}")
@@ -1145,13 +1140,14 @@ def batch_pairwise_distance_matrix(hidden_path,
                 saving_path = os.path.join(
                     saving_base_path,
                     subfolder_name,
-                    f"model_dm_CP_228.png"
+                    f"model_dm_CP.png"
                 )
                 matrix_save_path = os.path.join(
                     matrix_base_path,
                     subfolder_name,
                     "rdm",
-                    f"{pt_file.split('.pt')[0]}_228.npy"
+                    "not_remove",
+                    f"{pt_file.split('.pt')[0]}.npy"
                 )
 
                 # 确保保存目录存在
@@ -1162,7 +1158,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                 print(f"正在处理 {pt_file_path}，保存到 {saving_path} 和 {matrix_save_path}...")
                 pairwise_distance_matrix(
                     hidden_states,
-                    saving_path=saving_path,
+                    saving_path=None,
                     is_number_label=is_number_label,
                     save_matrix_path=matrix_save_path
                 )

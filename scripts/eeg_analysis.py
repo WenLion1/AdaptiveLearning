@@ -430,7 +430,7 @@ def batch_compute_eeg_model_rdm_correlation(eeg_path,
         println("leave-one-out sub number :", s)
         sub_eeg_data = np.setdiff1d(np.arange(0, sub_num), s)
 
-        # for z in sub_eeg_data:
+        for z in sub_eeg_data:
 
 
 def plot_npy_from_subfolders(folder_path,
@@ -718,9 +718,10 @@ if __name__ == "__main__":
     #                                               threshold=0.7)
     # print(significant_points)
 
-    data = np.load("../data/eeg/hc/eeg_preprocessing_data.npy")
-    computer_eeg_rdm(eeg_data=data,
-                     save_path="../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
+    # data = np.load("../data/eeg/hc/eeg_preprocessing_data.npy")
+    # computer_eeg_rdm(eeg_data=data,
+    #                  save_path="../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
+
     # batch_compute_eeg_model_rdm_correlation(eeg_path="../data/eeg/hc/eeg_preprocessing_data.npy",
     #                                         model_path="../results/numpy/model/sub/hc",
     #                                         time_range=(100, 350),)
