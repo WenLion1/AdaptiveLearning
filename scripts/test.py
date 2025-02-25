@@ -146,10 +146,12 @@ def evaluate_model(data_dir,
         hidden_states = np.vstack(hidden_states)
         hidden_states_save_dir += "/not_remove"
         os.makedirs(hidden_states_save_dir, exist_ok=True)
-        print("隐藏层正保存至: ", os.path.join(hidden_states_save_dir,
-                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt"))
-        torch.save(torch.tensor(hidden_states), os.path.join(hidden_states_save_dir,
-                                                             f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt"))
+        path = os.path.join(hidden_states_save_dir, f"{model_type}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}_{test_type}.pt")
+        print("隐藏层正保存至: ", path)
+        # 如果文件已存在，删除它（可选）
+        if os.path.exists(path):
+            os.remove(path)
+        torch.save(torch.tensor(hidden_states), path)
 
     # 计算平均损失并打印
     average_loss = loss / len(dataloader_CP)

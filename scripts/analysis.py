@@ -1,3 +1,4 @@
+import glob
 import os
 import random
 
@@ -1166,6 +1167,59 @@ def batch_pairwise_distance_matrix(hidden_path,
     print("所有文件处理完成。")
 
 
+def find_npy_files(root_dir, keyword="combine"):
+    """
+    递归查找 root_dir 及所有子文件夹中包含特定关键字的 .npy 文件
+
+    :param root_dir: 需要遍历的根目录
+    :param keyword: 需要匹配的文件名关键字
+    :return: 符合条件的 .npy 文件列表
+    """
+    npy_files = []
+    for dirpath, _, filenames in os.walk(root_dir):  # 递归遍历所有子目录
+        for file in filenames:
+            if keyword in file and file.endswith(".npy"):  # 过滤包含关键字的 .npy 文件
+                npy_files.append(os.path.join(dirpath, file))
+    return npy_files
+
+
+def merge_model_rdm_files(root_dir, save_path, keyword="combine"):
+    """
+    遍历所有子文件夹，读取名字包含关键字的 .npy 文件，并合并它们为一个 2D 数组后保存。
+
+    :param root_dir: 需要遍历的根目录
+    :param save_path: 合并后的 .npy 文件保存路径
+    :param keyword: 需要匹配的文件名关键字
+    """
+    npy_files = find_npy_files(root_dir, keyword)
+    all_arrays = []
+
+    if not npy_files:
+        print("未找到任何符合条件的 .npy 文件，未执行合并操作。")
+        return
+
+    for npy_file in npy_files:
+        print(f"加载文件: {npy_file}")
+        data = np.load(npy_file)
+
+        # 只支持 1D 数组，转换为 (1, N) 以便后续合并
+        if data.ndim == 1:
+            data = data[np.newaxis, :]  # 变成 (1, 20)
+        else:
+            print(f"警告: {npy_file} 不是 1D 数组，跳过。")
+            continue
+
+        all_arrays.append(data)
+
+    # 确保所有数组的形状兼容
+    try:
+        merged_array = np.concatenate(all_arrays, axis=0)  # 按行合并成 (N, 20)
+        np.save(save_path, merged_array)
+        print(f"合并完成，数据已保存到 {save_path}")
+    except ValueError as e:
+        print(f"数据形状不兼容，无法合并: {e}")
+
+
 if __name__ == "__main__":
     # # 隐藏层轨迹
     # plot_hidden_state_trajectories(hidden_states_dir="../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt",
@@ -1230,9 +1284,15 @@ if __name__ == "__main__":
     #                          saving_path="../results/png/sub/hc/405/model_dm_CP_228.png",
     #                          is_number_label=False,
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
+    #
+    # # 批量产生不相似性矩阵
+    # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
+    #                                saving_base_path="../results/png/sub/hc",
+    #                                matrix_base_path="../results/numpy/model/sub/hc",
+    #                                is_number_label=False)
 
-    # 批量产生不相似性矩阵
-    batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
-                                   saving_base_path="../results/png/sub/hc",
-                                   matrix_base_path="../results/numpy/model/sub/hc",
-                                   is_number_label=False)
+    # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
+    #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
+
+    data = np.load("../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
+    print(data.shape)

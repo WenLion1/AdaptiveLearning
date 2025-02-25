@@ -242,7 +242,7 @@ def batch_eeg_preprocessing(eeg_folder,
 def get_numpy_from_fif(folder_path,
                        save_folder_path, ):
     """
-    将eeg数据提取为numpy矩阵
+    将eeg数据提取为numpy矩阵, 要跑一点时间
 
     :param save_folder_path:
     :param folder_path:
@@ -282,44 +282,44 @@ if __name__ == "__main__":
     #                         eogs_list=eogs_list,
     #                         save_path=save_path)
 
-    # # 设置数据文件夹路径
-    # data_folder = "../data/eeg/hc"  # 修改为你的实际路径
-    #
-    # # 获取所有 .fif 文件
-    # file_list = glob.glob(os.path.join(data_folder, "*.fif"))
-    #
-    # # 存储所有 evoke 对象的列表
-    # evokes = []
-    #
-    # # 遍历所有 .fif 文件
-    # for file_path in file_list:
-    #     print(f"Processing file: {file_path}")
-    #
-    #     # 读取 .fif 文件
-    #     epochs = mne.read_epochs(file_path, preload=True)
-    #
-    #     # 应用基线校正
-    #     epochs.apply_baseline((-0.7, 0.5))
-    #
-    #     # 计算 ERP（evoked response）
-    #     evoke = epochs.average()
-    #
-    #     # 选择需要的通道（这里是所有通道，你也可以指定某些通道）
-    #     evokes.append(evoke)
-    #
-    # # 确保至少有一个 evoke 计算完成
-    # if len(evokes) == 0:
-    #     print("No .fif files found or processed!")
-    #     exit()
-    #
-    # # 对所有 evoke 进行 **通道平均**
-    # evoke_mean = mne.grand_average(evokes)
-    #
-    # # 选择特定通道（E6, E62）
-    # evoke_mean.pick(["E6", "E62"])
-    #
-    # # 绘制最终平均 ERP 曲线
-    # evoke_mean.plot_joint(title="Grand Average ERP")
+    # 设置数据文件夹路径
+    data_folder = "../data/eeg/hc"  # 修改为你的实际路径
+
+    # 获取所有 .fif 文件
+    file_list = glob.glob(os.path.join(data_folder, "*.fif"))
+
+    # 存储所有 evoke 对象的列表
+    evokes = []
+
+    # 遍历所有 .fif 文件
+    for file_path in file_list:
+        print(f"Processing file: {file_path}")
+
+        # 读取 .fif 文件
+        epochs = mne.read_epochs(file_path, preload=True)
+
+        # 应用基线校正
+        epochs.apply_baseline((-0.2, 0))
+
+        # 计算 ERP（evoked response）
+        evoke = epochs.average()
+
+        # 选择需要的通道（这里是所有通道，你也可以指定某些通道）
+        evokes.append(evoke)
+
+    # 确保至少有一个 evoke 计算完成
+    if len(evokes) == 0:
+        print("No .fif files found or processed!")
+        exit()
+
+    # 对所有 evoke 进行 **通道平均**
+    evoke_mean = mne.grand_average(evokes)
+
+    # 选择特定通道（E6, E62）
+    evoke_mean.pick(["E6", "E62"])
+
+    # 绘制最终平均 ERP 曲线
+    evoke_mean.plot_joint(title="Grand Average ERP")
 
     # epochs = mne.read_epochs("../data/eeg/hc/462.fif", preload=True)
     # epochs.apply_baseline((-0.2, 0))
@@ -328,7 +328,10 @@ if __name__ == "__main__":
     # # evoke.pick(["E6", "E62"])
     # evoke.plot_joint()
 
-    get_numpy_from_fif(folder_path="../data/eeg/hc",
-                       save_folder_path="../data/eeg/hc")
+    # get_numpy_from_fif(folder_path="../data/eeg/hc",
+    #                    save_folder_path="../data/eeg/hc")
+
+    # data = np.load("../data/eeg/hc/eeg_preprocessing_data.npy")
+    # print(data.shape)
 
 

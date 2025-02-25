@@ -6,9 +6,9 @@ import torch
 from matplotlib import pyplot as plt
 from scipy.io import loadmat
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import pearsonr, spearmanr, ttest_1samp
+from scipy.stats import pearsonr, spearmanr, ttest_1samp, zscore
 from sklearn.preprocessing import StandardScaler
-from mne.stats import permutation_cluster_test
+from mne.stats import permutation_cluster_test, permutation_cluster_1samp_test
 from twisted.python.util import println
 
 
@@ -411,8 +411,8 @@ def computer_eeg_rdm(eeg_data,
     np.save(save_path, rdm_results)
 
 
-def batch_compute_eeg_model_rdm_correlation(eeg_path,
-                                            model_path,
+def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
+                                            model_rdm,
                                             time_range, ):
     """
     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
@@ -423,14 +423,44 @@ def batch_compute_eeg_model_rdm_correlation(eeg_path,
     :return:
     """
 
-    eeg_data = np.load(eeg_path)
-    print("eeg数据现状为：", eeg_data.shape)  # (29, 48, 98, 851)
-    sub_num = eeg_data.shape[0]
+    print("eeg_rdm数据现状为：", eeg_rdm.shape)  # (27, 851, 114960)
+    sub_num = eeg_rdm.shape[0]
     for s in range(sub_num):
+        rsa_results = np.zeros((sub_num, time_range[1]-time_range[0]+1))
+        print(rsa_results.shape)
         println("leave-one-out sub number :", s)
-        sub_eeg_data = np.setdiff1d(np.arange(0, sub_num), s)
+        submat2 = np.setdiff1d(np.arange(0, sub_num), s)
 
-        for z in sub_eeg_data:
+        for z in range(sub_num):
+            sub_eeg_data = np.squeeze(eeg_rdm[z, :, :])  # (851, 114960)
+            sub_model_data = np.squeeze(model_rdm[z, :])  # (114960,)
+
+            sub_model_data_normalized = zscore(sub_model_data, axis=0, nan_policy='omit')
+
+            for t in range(time_range[0] - 1, time_range[1]):
+                sub_eeg_data_cat = sub_eeg_data[t, :]
+                sub_eeg_data_normalized = zscore(sub_eeg_data_cat, axis=0, nan_policy='omit')
+
+                spearman_corr, p_value = spearmanr(sub_model_data_normalized, sub_eeg_data_normalized)
+                rsa_results[z, t-(time_range[0]-1)] = spearman_corr
+        t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results,
+                                                                         threshold=2.0,
+                                                                         n_permutations=1000,
+                                                                         tail=1)
+        print("len(clusters): ", len(clusters))  # 可能有多个聚类
+        print("clusters: ", clusters)  # 查看具体的内容
+
+        print("len(cluster_pv): ", len(cluster_pv))
+        print("cluster_pv", cluster_pv)
+
+        significant_clusters = np.where(cluster_pv < 0.05)[0]  # 选择 p < 0.05 的聚类
+
+        for i_clu in significant_clusters:
+            # 找到聚类覆盖的时间点
+            time_indices = clusters[i_clu][0]
+            start_time = time_indices[0]
+            end_time = time_indices[-1]
+            print(f"显著时间段 {i_clu}: {start_time} ~ {end_time}, p = {cluster_pv[i_clu]:.3f}")
 
 
 def plot_npy_from_subfolders(folder_path,
@@ -722,6 +752,8 @@ if __name__ == "__main__":
     # computer_eeg_rdm(eeg_data=data,
     #                  save_path="../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
 
-    # batch_compute_eeg_model_rdm_correlation(eeg_path="../data/eeg/hc/eeg_preprocessing_data.npy",
-    #                                         model_path="../results/numpy/model/sub/hc",
-    #                                         time_range=(100, 350),)
+    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
+    model_rdm = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
+    batch_compute_eeg_model_rdm_correlation(eeg_rdm=eeg_rdm,
+                                            model_rdm=model_rdm,
+                                            time_range=(100, 350))
