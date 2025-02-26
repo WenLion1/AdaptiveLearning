@@ -180,6 +180,8 @@ def save_eeg(epochs,
 def batch_eeg_preprocessing(eeg_folder,
                             edge_list,
                             eogs_list,
+                            t_min=-0.7,
+                            t_max=0.5,
                             save_path="../data/eeg/hc/"):
     """
     批量预处理一个文件夹内的eeg
@@ -227,7 +229,9 @@ def batch_eeg_preprocessing(eeg_folder,
             # 切分需要的epoch
             epochs = cut_epoch(raw,
                                events,
-                               event_id=event_id_2 + 2, )
+                               tmin=t_min,
+                               tmax=t_max,
+                               event_id=event_id_2, )
 
             # ica
             epochs = eeg_ica(epochs)
@@ -275,51 +279,53 @@ if __name__ == "__main__":
     #              'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
     # eogs_list = ['E8', 'E25', 'E126', 'E127']
     #
-    # save_path = "../data/eeg"
+    # save_path = "../data/eeg/hc/2base_-1.5_0.5"
     # # 批量预处理
-    # batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg",
+    # batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg\1",
+    #                         t_min=-1.5,
+    #                         t_max=0.5,
     #                         edge_list=edge_list,
     #                         eogs_list=eogs_list,
     #                         save_path=save_path)
 
-    # 设置数据文件夹路径
-    data_folder = "../data/eeg/hc"  # 修改为你的实际路径
-
-    # 获取所有 .fif 文件
-    file_list = glob.glob(os.path.join(data_folder, "*.fif"))
-
-    # 存储所有 evoke 对象的列表
-    evokes = []
-
-    # 遍历所有 .fif 文件
-    for file_path in file_list:
-        print(f"Processing file: {file_path}")
-
-        # 读取 .fif 文件
-        epochs = mne.read_epochs(file_path, preload=True)
-
-        # 应用基线校正
-        epochs.apply_baseline((-0.2, 0))
-
-        # 计算 ERP（evoked response）
-        evoke = epochs.average()
-
-        # 选择需要的通道（这里是所有通道，你也可以指定某些通道）
-        evokes.append(evoke)
-
-    # 确保至少有一个 evoke 计算完成
-    if len(evokes) == 0:
-        print("No .fif files found or processed!")
-        exit()
-
-    # 对所有 evoke 进行 **通道平均**
-    evoke_mean = mne.grand_average(evokes)
-
-    # 选择特定通道（E6, E62）
-    evoke_mean.pick(["E6", "E62"])
-
-    # 绘制最终平均 ERP 曲线
-    evoke_mean.plot_joint(title="Grand Average ERP")
+    # # 设置数据文件夹路径
+    # data_folder = "../data/eeg/hc"  # 修改为你的实际路径
+    #
+    # # 获取所有 .fif 文件
+    # file_list = glob.glob(os.path.join(data_folder, "*.fif"))
+    #
+    # # 存储所有 evoke 对象的列表
+    # evokes = []
+    #
+    # # 遍历所有 .fif 文件
+    # for file_path in file_list:
+    #     print(f"Processing file: {file_path}")
+    #
+    #     # 读取 .fif 文件
+    #     epochs = mne.read_epochs(file_path, preload=True)
+    #
+    #     # 应用基线校正
+    #     epochs.apply_baseline((-0.2, 0))
+    #
+    #     # 计算 ERP（evoked response）
+    #     evoke = epochs.average()
+    #
+    #     # 选择需要的通道（这里是所有通道，你也可以指定某些通道）
+    #     evokes.append(evoke)
+    #
+    # # 确保至少有一个 evoke 计算完成
+    # if len(evokes) == 0:
+    #     print("No .fif files found or processed!")
+    #     exit()
+    #
+    # # 对所有 evoke 进行 **通道平均**
+    # evoke_mean = mne.grand_average(evokes)
+    #
+    # # 选择特定通道（E6, E62）
+    # evoke_mean.pick(["E6", "E62"])
+    #
+    # # 绘制最终平均 ERP 曲线
+    # evoke_mean.plot_joint(title="Grand Average ERP")
 
     # epochs = mne.read_epochs("../data/eeg/hc/462.fif", preload=True)
     # epochs.apply_baseline((-0.2, 0))
@@ -328,10 +334,11 @@ if __name__ == "__main__":
     # # evoke.pick(["E6", "E62"])
     # evoke.plot_joint()
 
-    # get_numpy_from_fif(folder_path="../data/eeg/hc",
-    #                    save_folder_path="../data/eeg/hc")
+    # 将eeg的fif转化为numpy
+    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1.5_0.5",
+                       save_folder_path="../data/eeg/hc/2base_-1.5_0.5")
 
-    # data = np.load("../data/eeg/hc/eeg_preprocessing_data.npy")
-    # print(data.shape)
+    data = np.load("../data/eeg/hc/2base_-1.5_0.5/eeg_preprocessing_data.npy")
+    print(data.shape)
 
 
