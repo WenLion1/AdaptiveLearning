@@ -396,112 +396,21 @@ def computer_eeg_rdm(eeg_data,
     """
 
     sub_num, trial_num, channel_num, time_num = eeg_data.shape
-    rdm_results = np.zeros((sub_num, time_num, trial_num * (trial_num - 1) // 2))  # 存储结果
+    rdm_results = np.zeros((sub_num, 1000, trial_num * (trial_num - 1) // 2))  # 存储结果
 
     for sub in range(sub_num):
         println("sub: ", sub)
-        for t in range(time_num):
-            println("time: ", t)
+        for t in range(time_num-1000, time_num):
             # 取出当前被试、当前时间点的数据 (trial × channel)
             trial_features = eeg_data[sub, :, :, t]  # (trial, channel)
 
             # 计算 RDM
             rdm = pdist(trial_features, metric=metric)  # 计算 pairwise 距离
-            rdm_results[sub, t] = rdm  # 存储到结果矩阵
+            rdm_results[sub, t-501] = rdm  # 存储到结果矩阵
     np.save(save_path, rdm_results)
 
 
-def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
-                                            model_rdm,
-                                            time_range, ):
-    """
-    批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
 
-    :param eeg_path:
-    :param model_path:
-    :param time_range:
-    :return:
-    """
-
-    print("eeg_rdm数据现状为：", eeg_rdm.shape)  # (27, 851, 114960)
-    sub_num = eeg_rdm.shape[0]
-    for s in range(sub_num):
-        rsa_results = np.zeros((sub_num, time_range[1]-time_range[0]+1))
-        print(rsa_results.shape)
-        println("leave-one-out sub number :", s)
-
-        for z in range(sub_num):
-            sub_eeg_data = np.squeeze(eeg_rdm[z, :, :])  # (851, 114960)
-            sub_model_data = np.squeeze(model_rdm[z, :])  # (114960,)
-
-            sub_model_data_normalized = zscore(sub_model_data, axis=0, nan_policy='omit')
-
-            for t in range(time_range[0] - 1, time_range[1]):
-                sub_eeg_data_cat = sub_eeg_data[t, :]
-                sub_eeg_data_normalized = zscore(sub_eeg_data_cat, axis=0, nan_policy='omit')
-
-                spearman_corr, p_value = spearmanr(sub_model_data_normalized, sub_eeg_data_normalized)
-                rsa_results[z, t-(time_range[0]-1)] = spearman_corr
-
-        time_points = np.linspace(0, 1000, num=rsa_results.shape[1])  # 假设从-200ms到800ms
-
-        # 计算平均相关系数曲线
-        mean_corr = np.mean(rsa_results, axis=0)  # 所有被试平均
-
-        # 创建画布
-        plt.figure(figsize=(12, 6))
-
-        # 绘制主曲线
-        plt.plot(time_points, mean_corr,
-                 color='navy',
-                 linewidth=2,
-                 label='Mean Correlation')
-
-        # 绘制零线
-        plt.axhline(0, color='black', linestyle='--', linewidth=1)
-
-        t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results,
-                                                                         threshold=2.0,
-                                                                         n_permutations=5000,
-                                                                         tail=1)
-        # print("len(clusters): ", len(clusters))  # 可能有多个聚类
-        # print("clusters: ", clusters)  # 查看具体的内容
-        #
-        # print("len(cluster_pv): ", len(cluster_pv))
-        # print("cluster_pv", cluster_pv)
-
-        significant_clusters = np.where(cluster_pv < 0.05)[0]  # 选择 p < 0.05 的聚类
-
-        for i_clu in significant_clusters:
-            # 找到聚类覆盖的时间点
-            time_indices = clusters[i_clu][0]
-            # 转换为实际时间点
-            sig_times = time_points[time_indices]
-            # 绘制显著性背景色块
-            plt.fill_betweenx(y=[mean_corr.min() - 0.05, mean_corr.max() + 0.05],  # 纵向填充范围
-                              x1=sig_times.min(),
-                              x2=sig_times.max(),
-                              color='orange',
-                              alpha=0.3,
-                              label=f'Cluster {i_clu} (p={cluster_pv[i_clu]:.3f})')
-
-        plt.xlabel('Time (ms)', fontsize=12)
-        plt.ylabel('Correlation with Model', fontsize=12)
-        plt.title('Time-resolved RSA Correlation with Model RDM', fontsize=14)
-        plt.ylim(mean_corr.min() - 0.05, mean_corr.max() + 0.05)  # 留出色块空间
-
-        # 处理图例（避免重复标签）
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))  # 去重
-        plt.legend(by_label.values(), by_label.keys(), loc='upper right')
-
-        plt.grid(alpha=0.3)
-        plt.tight_layout()
-        # **保存图像，不显示**
-        plt.savefig(f"rsa_correlation_{s}.png", dpi=300, bbox_inches='tight')
-
-        # 关闭图像，释放内存
-        plt.close()
 
 
 def plot_npy_from_subfolders(folder_path,
@@ -720,6 +629,103 @@ def find_significant_periods(data, alpha=0.05, threshold=0.8):
 
     return significant_points
 
+def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
+                                            model_rdm,
+                                            time_range,
+                                            time_min,
+                                            time_max,):
+    """
+    批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
+
+    :param eeg_rdm:
+    :param model_rdm:
+    :param time_range:
+    :param time_min:
+    :param time_max:
+    :return:
+    """
+
+    sub_num = eeg_rdm.shape[0]
+    for s in range(sub_num):
+        rsa_results = np.zeros((sub_num, time_range[1]-time_range[0]+1))
+        println("leave-one-out sub number :", s)
+        submat = np.delete(np.arange(sub_num), s)
+
+        for z in submat:
+            sub_eeg_data = eeg_rdm[z, :, :]  # (851, 114960)
+            sub_model_data = model_rdm[z, :]  # (114960,)
+            print(sub_model_data)
+            sub_model_data_normalized = zscore(sub_model_data)
+
+            for t in range(time_range[0] - 1, time_range[1]):
+                sub_eeg_data_cat = sub_eeg_data[t, :]
+                sub_eeg_data_normalized = zscore(sub_eeg_data_cat)
+
+                spearman_corr, p_value = pearsonr(sub_model_data_normalized, sub_eeg_data_normalized)
+                rsa_results[z, t-(time_range[0]-1)] = spearman_corr
+
+        time_points = np.linspace(time_min, time_max, num=rsa_results.shape[1])  # 假设从-200ms到800ms
+
+        # 创建画布
+        plt.figure(figsize=(6, 5))
+
+        # 绘制每个被试的相关性曲线
+        for z in range(sub_num):
+            plt.plot(time_points, rsa_results[z, :], color='gray', linewidth=0.7, alpha=0.5)
+
+        # 计算平均相关系数曲线
+        mean_corr = np.mean(rsa_results, axis=0)  # 所有被试平均
+        sem_corr = np.std(rsa_results, axis=0) / np.sqrt(rsa_results.shape[0])  # 计算 SEM
+
+        # 绘制主曲线（所有被试平均）
+        plt.plot(time_points, mean_corr,
+                 color='red',
+                 linewidth=2.5,
+                 label='Mean Correlation')
+        plt.fill_between(time_points, mean_corr-sem_corr, mean_corr+sem_corr, color='red', alpha=0.3)
+
+        # 绘制零线
+        plt.axhline(0, color='black', linestyle='--', linewidth=1)
+        # 添加 x=0 的竖直虚线
+        plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
+
+        t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results,
+                                                                         threshold=2.0,
+                                                                         n_permutations=5000,
+                                                                         tail=1)
+
+        significant_clusters = np.where(cluster_pv < 0.02)[0]  # 选择 p < 0.05 的聚类
+
+        # 画显著性点
+        for i_clu in significant_clusters:
+            time_indices = clusters[i_clu][0]  # 取显著时间索引
+            sig_times = time_points[time_indices]  # 转换为实际时间
+            # 打印 cluster 详细信息
+            print(f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
+            plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min() - 0.02), color='red', s=5)
+
+        plt.xlabel('Time (ms)', fontsize=12)
+        plt.ylabel('Coefficient', fontsize=12)
+        plt.title('Time-resolved RSA Correlation with Model RDM', fontsize=14)
+
+        # 自动调整坐标轴范围
+        plt.xlim(time_points.min(), time_points.max())  # 根据时间范围自动调整 X 轴
+        plt.ylim(np.min(rsa_results) - 0.02, np.max(rsa_results) + 0.02)  # 根据相关性数据动态调整 Y 轴
+
+        # 处理图例（避免重复标签）
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))  # 去重
+        plt.legend(by_label.values(), by_label.keys(), loc='upper right')
+
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        # **保存图像，不显示**
+        plt.savefig(f"rsa_correlation_{s}.png", dpi=300, bbox_inches='tight')
+
+        # 关闭图像，释放内存
+        plt.close()
+        dfgdfgd
+
 
 if __name__ == "__main__":
     # # 读取 .mat 文件
@@ -789,14 +795,42 @@ if __name__ == "__main__":
     #                                               threshold=0.7)
     # print(significant_points)
 
-    # data = np.load("../data/eeg/hc/2base_-1.5_0.5/eeg_preprocessing_data.npy")
+    # data = np.load("../data/eeg/hc/2base_-3_0_baseline_-3_-2.8/eeg_preprocessing_data.npy")
     # computer_eeg_rdm(eeg_data=data,
-    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1.5_0.5/eeg_rdm.npy")
+    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-3_0_baseline_-3_-2.8/eeg_rdm.npy")
 
-    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1.5_0.5/eeg_rdm.npy")
+    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-3_0_baseline_-3_-2.8/eeg_rdm.npy")
     model_rdm = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
-    print(eeg_rdm.shape)
-    print(model_rdm.shape)
+
+    # # 获取矩阵的行数
+    # num_rows = model_rdm.shape[0]
+    #
+    # # 获取第一行的数据
+    # first_row = model_rdm[0, :]
+    #
+    # # 将每一行都设置为第一行的复制
+    # model_rdm[:] = first_row
+    # print(model_rdm)
+
+    # # 生成一个错位排列（derangement）
+    # def generate_derangement(n):
+    #     while True:
+    #         # 生成一个随机排列
+    #         perm = np.random.permutation(n)
+    #         # 检查是否满足错位排列条件（所有元素都不在原始位置）
+    #         if all(perm[i] != i for i in range(n)):
+    #             return perm
+    #
+    #
+    # # 生成错位排列索引
+    # deranged_indices = generate_derangement(num_rows)
+    # print(deranged_indices)
+    #
+    # # 按行打乱矩阵
+    # shuffled_model_rdm = model_rdm[deranged_indices]
+
     batch_compute_eeg_model_rdm_correlation(eeg_rdm=eeg_rdm,
                                             model_rdm=model_rdm,
-                                            time_range=(600, 800))
+                                            time_range=(0, 1000),
+                                            time_min=-2,
+                                            time_max=0)

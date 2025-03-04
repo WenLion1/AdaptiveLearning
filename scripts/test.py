@@ -13,9 +13,6 @@ from scripts.dataloader import generate_dataset
 from scripts.model import perceptual_network, perceptual_network_vm
 from scripts.utils import determine_training_stops
 
-torch.manual_seed(20010509)
-np.random.seed(20010509)
-
 # 打印运行机器类型：cpu、gpu
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'working on {device}')
@@ -206,6 +203,7 @@ def batch_evaluate(data_folder_path,
         current_hidden_dir = os.path.join(hidden_state_save_dir, subfolder_name)
         os.makedirs(current_results_dir, exist_ok=True)  # 创建子文件夹（如果尚不存在）
 
+
         # 遍历当前子文件夹中的每个 CSV 文件
         for csv_file in csv_files:
             data_dir = os.path.join(subdir, csv_file)  # 完整的 CSV 文件路径
@@ -215,6 +213,8 @@ def batch_evaluate(data_folder_path,
                 test_type = "CP"
             elif "DataOddball" in csv_file:
                 test_type = "OB"
+            elif "reverse" in csv_file:
+                test_type = "reverse"
             elif "combine" in csv_file:
                 test_type = "combine"
             else:
@@ -240,7 +240,7 @@ def batch_evaluate(data_folder_path,
 
 if __name__ == "__main__":
     batch_evaluate(data_folder_path="../data/sub/hc",
-                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
+                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_7.h5",
                    results_folder_path="../results/csv/sub/hc",
                    hidden_state_save_dir="../hidden/sub/hc",
                    is_save_hidden_state=1,

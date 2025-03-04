@@ -1284,15 +1284,16 @@ if __name__ == "__main__":
     #                          saving_path="../results/png/sub/hc/405/model_dm_CP_228.png",
     #                          is_number_label=False,
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
-    #
+
     # # 批量产生不相似性矩阵
     # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
     #                                saving_base_path="../results/png/sub/hc",
     #                                matrix_base_path="../results/numpy/model/sub/hc",
     #                                is_number_label=False)
 
-    # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
-    #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
+    merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
+                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_copy.npy",
+                          keyword="combine")
 
-    data = np.load("../results/numpy/eeg_rdm/hc/eeg_rdm.npy")
-    print(data.shape)
+    # data = np.load("../results/numpy/eeg_rdm/hc/3base_-0.7_1/eeg_rdm.npy")
+    # print(data.shape)

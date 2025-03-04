@@ -139,15 +139,17 @@ def cut_epoch(raw,
 
 
 def eeg_ica(epochs,
-            n_components=15, ):
+            n_components=15,
+            baseline_range=(-3, -2.8)):
     """
     ica
     
-    :param epochs: 
+    :param baseline_range:
+    :param epochs:
     :param n_components: 
     :return: 
     """
-    epochs.apply_baseline((-0.2, 0))
+    epochs.apply_baseline(baseline_range)
 
     # ica
     ica = mne.preprocessing.ICA(n_components=n_components, random_state=97, method="infomax", max_iter=3000)
@@ -182,10 +184,15 @@ def batch_eeg_preprocessing(eeg_folder,
                             eogs_list,
                             t_min=-0.7,
                             t_max=0.5,
-                            save_path="../data/eeg/hc/"):
+                            event_id="2   ",
+                            save_path="../data/eeg/hc/",
+                            baseline_range=(-3, -2.8)):
     """
     批量预处理一个文件夹内的eeg
 
+    :param t_min:
+    :param t_max:
+    :param event_id:
     :param save_path:
     :param eogs_list:
     :param edge_list:
@@ -207,7 +214,7 @@ def batch_eeg_preprocessing(eeg_folder,
             # 加载数据
             raw, events, events_id = load_data(eeg_path)
 
-            event_id_2 = events_id.get("2   ")
+            event_id_2 = events_id.get(event_id)
 
             events = change_one_mark(events=events,
                                      min=1,
@@ -234,7 +241,8 @@ def batch_eeg_preprocessing(eeg_folder,
                                event_id=event_id_2, )
 
             # ica
-            epochs = eeg_ica(epochs)
+            epochs = eeg_ica(epochs,
+                             baseline_range=baseline_range)
 
             # 保存文件
             save_file_name = sub_name + ".fif"
@@ -244,10 +252,14 @@ def batch_eeg_preprocessing(eeg_folder,
 
 
 def get_numpy_from_fif(folder_path,
-                       save_folder_path, ):
+                       save_folder_path,
+                       is_baseline=False,
+                       baseline_range=(-0.2, 0),):
     """
     将eeg数据提取为numpy矩阵, 要跑一点时间
 
+    :param baseline_range:
+    :param is_baseline:
     :param save_folder_path:
     :param folder_path:
     :return:
@@ -261,6 +273,10 @@ def get_numpy_from_fif(folder_path,
 
         epochs = mne.read_epochs(fif_path, preload=True)
 
+        if is_baseline:
+            # 应用基线校正
+            epochs.apply_baseline(baseline_range)
+
         data = epochs.get_data(picks=['eeg'])
 
         eeg_data_list.append(data)
@@ -268,7 +284,10 @@ def get_numpy_from_fif(folder_path,
         print(f"Loaded {fif_file}: shape {data.shape}")
 
     eeg_data_list = np.array(eeg_data_list)
-    save_path = os.path.join(save_folder_path, "eeg_preprocessing_data.npy")
+    if is_baseline:
+        save_path = os.path.join(save_folder_path, "eeg_preprocessing_data_baseline.npy")
+    else:
+        save_path = os.path.join(save_folder_path, "eeg_preprocessing_data.npy")
     np.save(save_path, eeg_data_list)
 
 
@@ -279,14 +298,16 @@ if __name__ == "__main__":
     #              'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
     # eogs_list = ['E8', 'E25', 'E126', 'E127']
     #
-    # save_path = "../data/eeg/hc/2base_-1.5_0.5"
+    # save_path = "../data/eeg/hc/2base_-3_0_baseline_-3_-2.8"
     # # 批量预处理
     # batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg\1",
-    #                         t_min=-1.5,
-    #                         t_max=0.5,
+    #                         t_min=-3,
+    #                         t_max=0,
+    #                         event_id="2   ",
     #                         edge_list=edge_list,
     #                         eogs_list=eogs_list,
-    #                         save_path=save_path)
+    #                         save_path=save_path,
+    #                         baseline_range=(-3, -2.8))
 
     # # 设置数据文件夹路径
     # data_folder = "../data/eeg/hc"  # 修改为你的实际路径
@@ -335,10 +356,12 @@ if __name__ == "__main__":
     # evoke.plot_joint()
 
     # 将eeg的fif转化为numpy
-    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1.5_0.5",
-                       save_folder_path="../data/eeg/hc/2base_-1.5_0.5")
+    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-3_0_baseline_-3_-2.8",
+                       save_folder_path="../data/eeg/hc/2base_-3_0_baseline_-3_-2.8",
+                       is_baseline=False,
+                       baseline_range=(-1.5, -1.3))
 
-    data = np.load("../data/eeg/hc/2base_-1.5_0.5/eeg_preprocessing_data.npy")
+    data = np.load("../data/eeg/hc/2base_-3_0_baseline_-3_-2.8/eeg_preprocessing_data.npy")
     print(data.shape)
 
 
