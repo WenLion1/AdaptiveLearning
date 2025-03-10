@@ -1126,6 +1126,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                 # 加载 hidden_states
                 try:
                     hidden_states = torch.load(pt_file_path).numpy()
+                    print(hidden_states.shape)
                     mean_value = hidden_states[0].mean()
 
                     # mean_per_trial = hidden_states.mean(axis=1, keepdims=True)
@@ -1292,8 +1293,8 @@ if __name__ == "__main__":
     #                                is_number_label=False)
 
     merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
-                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_copy.npy",
-                          keyword="combine")
+                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_OB.npy",
+                          keyword="reverse")
 
-    # data = np.load("../results/numpy/eeg_rdm/hc/3base_-0.7_1/eeg_rdm.npy")
+    # data = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
     # print(data.shape)

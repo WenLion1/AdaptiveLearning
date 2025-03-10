@@ -240,7 +240,7 @@ def batch_evaluate(data_folder_path,
 
 if __name__ == "__main__":
     batch_evaluate(data_folder_path="../data/sub/hc",
-                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_7.h5",
+                   model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
                    results_folder_path="../results/csv/sub/hc",
                    hidden_state_save_dir="../hidden/sub/hc",
                    is_save_hidden_state=1,
