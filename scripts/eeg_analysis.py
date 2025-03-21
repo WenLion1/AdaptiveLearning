@@ -631,10 +631,12 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
                                             model_rdm,
                                             time_range,
                                             time_min,
-                                            time_max, ):
+                                            time_max,
+                                            re_threhold,):
     """
     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
 
+    :param re_threhold:
     :param eeg_rdm:
     :param model_rdm:
     :param time_range:
@@ -687,10 +689,15 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
         # 添加 x=0 的竖直虚线
         plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
 
+        tail = 1
+        if re_threhold > 0:
+            tail = 1
+        elif re_threhold < 0:
+            tail = -1
         t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results,
-                                                                         threshold=2.0,
+                                                                         threshold=re_threhold,
                                                                          n_permutations=5000,
-                                                                         tail=1)
+                                                                         tail=tail)
 
         significant_clusters = np.where(cluster_pv < 0.05)[0]  # 选择 p < 0.05 的聚类
 
@@ -701,7 +708,7 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
             # 打印 cluster 详细信息
             print(
                 f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
-            plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min() - 0.02), color='red', s=5)
+            plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min()), color='red', s=5)
 
         plt.xlabel('Time (ms)', fontsize=12)
         plt.ylabel('Coefficient', fontsize=12)
@@ -724,7 +731,7 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
 
         # 关闭图像，释放内存
         plt.close()
-        asdasd
+        awsdasd
 
 
 if __name__ == "__main__":
@@ -795,17 +802,21 @@ if __name__ == "__main__":
     #                                               threshold=0.7)
     # print(significant_points)
     #
-    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(2)_0.3_0.5/eeg_preprocessing_data_baseline_CP.npy", mmap_mode="r")
+    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_preprocessing_data_baseline_ob.npy", mmap_mode="r")
     # computer_eeg_rdm(eeg_data=data,
-    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(2)_0.3_0.5/eeg_rdm_ob.npy")
+    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy")
 
-    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(2)_0.3_0.5/eeg_rdm_ob.npy", mmap_mode="r")
-    model_rdm = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_OB.npy")
+    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy", mmap_mode="r")
+    model_rdm = np.load("../results/numpy/model/sub/test_CP_first/train_CP_first_test_CP_first.npy")
+    # model_rdm = model_rdm.T
+    # np.random.shuffle(model_rdm)
+    # model_rdm = model_rdm.T
     print(eeg_rdm.shape)
     print(model_rdm.shape)
 
     batch_compute_eeg_model_rdm_correlation(eeg_rdm=eeg_rdm,
                                             model_rdm=model_rdm,
-                                            time_range=(0, 750),
+                                            time_range=(100, 850),
                                             time_min=-1,
-                                            time_max=0.5)
+                                            time_max=0.5,
+                                            re_threhold=-2,)

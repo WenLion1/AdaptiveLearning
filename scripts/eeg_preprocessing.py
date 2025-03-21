@@ -138,9 +138,13 @@ def cut_epoch(raw,
     return epochs
 
 
-def cut_epoch_two_part(raw, events, tmin=-0.7, tmax=1, event_id=19):
+def cut_epoch_two_part(raw,
+                       events,
+                       tmin=-0.7,
+                       tmax=1,
+                       event_id=19):
     """
-    将要分析的 EEG 片段和 1 号 mark 之前的 0.5s 片段拼接在一起。
+    将要分析的 EEG 片段和 6 号 mark 之后的 0.2s 片段拼接在一起。
 
     :param raw: 原始 EEG 数据 (mne.io.Raw)
     :param events: 事件信息 (array, shape: n_events x 3)
@@ -154,12 +158,13 @@ def cut_epoch_two_part(raw, events, tmin=-0.7, tmax=1, event_id=19):
     epochs_main = mne.Epochs(raw, events, event_id=event_id, tmin=tmin, tmax=tmax,
                              baseline=None, preload=True)
 
-    baseline_tmin = 0  # 取 event_id=1 之前 0.5s
-    baseline_tmax = 0.2  # 事件发生时刻
+    baseline_tmin = 0  # 取 event_id=6 之后0.2s
+    baseline_tmax = 0.5  # 事件发生时刻
 
     # 3. 提取基线 epochs
-    epochs_baseline = mne.Epochs(raw, events, event_id=event_id+5, tmin=baseline_tmin, tmax=baseline_tmax,
+    epochs_baseline = mne.Epochs(raw, events, event_id=event_id + 5, tmin=baseline_tmin, tmax=baseline_tmax,
                                  baseline=None, preload=True)
+
     # 确保两组 epochs trial 数量匹配
     print("len(epochs_main): ", len(epochs_main))
     print("len(epochs_baseline): ", len(epochs_baseline))
@@ -167,9 +172,15 @@ def cut_epoch_two_part(raw, events, tmin=-0.7, tmax=1, event_id=19):
     if len(epochs_main) != len(epochs_baseline):
         raise ValueError("epochs_main 或 epochs_baseline长度不同，无法合并")
 
+    main_data = epochs_main.get_data()
+    baseline_data = epochs_baseline.get_data()
+    # 复制数据并进行移动
+    shifted_data = np.copy(baseline_data)
+    shifted_data[1:] = baseline_data[:-1]
+
     # 4. 逐个 trial 拼接（concatenate 方式）
-    combined_data = np.concatenate([epochs_baseline.get_data(),
-                                    epochs_main.get_data()], axis=-1)
+    combined_data = np.concatenate([shifted_data,
+                                    main_data], axis=-1)
 
     # 5. 生成新的 epochs
     new_info = epochs_main.info  # 继承原 epochs 的信息
@@ -177,6 +188,23 @@ def cut_epoch_two_part(raw, events, tmin=-0.7, tmax=1, event_id=19):
                                       events=epochs_main.events)
 
     return combined_epochs
+
+
+def cut_epoch_by_od_cp(raw,
+                       events,
+                       tmin=-0.7,
+                       tmax=1,
+                       event_id=19):
+    """
+    只切分od或cp试次
+
+    :param raw:
+    :param events:
+    :param tmin:
+    :param tmax:
+    :param event_id:
+    :return:
+    """
 
 
 def eeg_ica(epochs,
@@ -226,7 +254,7 @@ def save_eeg(epochs,
 def extract_events(events,
                    target_event_ids=[23, 24],
                    max_time_diff=10000,
-                   end_id=22,):
+                   end_id=22, ):
     """
     从事件数组中提取符合条件的事件：
     - 选择第一个 `target_event_ids` 之前最近的 `ID=1` 作为起点
@@ -297,6 +325,8 @@ def batch_eeg_preprocessing(eeg_folder,
     """
     批量预处理一个文件夹内的eeg
 
+    :param baseline_range:
+    :param is_two_part:
     :param is_baseline:
     :param t_min:
     :param t_max:
@@ -414,24 +444,30 @@ def get_numpy_from_fif(folder_path,
 
 
 if __name__ == "__main__":
-    # 设置边缘电极和eog电极
-    edge_list = ['E1', 'E2', 'E9', 'E14', 'E15', 'E17', 'E21', 'E22', 'E26', 'E32', 'E38', 'E39', 'E43', 'E44', 'E45',
-                 'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
-    eogs_list = ['E8', 'E25', 'E126', 'E127']
+    """
+    批量预处理
+    """
+    # # 设置边缘电极和eog电极
+    # edge_list = ['E1', 'E2', 'E9', 'E14', 'E15', 'E17', 'E21', 'E22', 'E26', 'E32', 'E38', 'E39', 'E43', 'E44', 'E45',
+    #              'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
+    # eogs_list = ['E8', 'E25', 'E126', 'E127']
+    #
+    # save_path = "../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.5"
+    # # 批量预处理
+    # batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg\1",
+    #                         t_min=-1,
+    #                         t_max=0.5,
+    #                         event_id="2   ",
+    #                         is_two_part=True,
+    #                         is_baseline=True,
+    #                         edge_list=edge_list,
+    #                         eogs_list=eogs_list,
+    #                         save_path=save_path,
+    #                         baseline_range=(0, 0.5))
 
-    save_path = "../data/eeg/hc/2base_-1_0.5_baseline(2)_0.3_0.5"
-    # 批量预处理
-    batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg\1",
-                            t_min=-1,
-                            t_max=0.5,
-                            event_id="2   ",
-                            is_two_part=False,
-                            is_baseline=True,
-                            edge_list=edge_list,
-                            eogs_list=eogs_list,
-                            save_path=save_path,
-                            baseline_range=(0.3, 0.5))
-
+    """
+    做ERP
+    """
     # # 设置数据文件夹路径
     # data_folder = "../data/eeg/hc/2base_0_1.5_baseline(1)_-0.5_0_ob"  # 修改为你的实际路径
     #
@@ -471,7 +507,9 @@ if __name__ == "__main__":
     # # 绘制最终平均 ERP 曲线
     # evoke_mean.plot_joint(title="Grand Average ERP")
 
-
+    """
+    单个被试ERP
+    """
     # # 2base_0_1.5_baseline(1)_-0.5_0_ob
     # epochs = mne.read_epochs("../data/eeg/hc/2base_0_1.5_baseline(1)_-0.5_0_ob/405.fif", preload=True)
     # epochs.apply_baseline((-0.5, 0))
@@ -480,11 +518,13 @@ if __name__ == "__main__":
     # evoke.pick(["E6", "E62"])
     # evoke.plot_joint()
 
-    # 将eeg的fif转化为numpy
-    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(2)_0.3_0.5",
-                       save_folder_path="../data/eeg/hc/2base_-1_0.5_baseline(2)_0.3_0.5",
+    """
+    将eeg的fif转化为numpy
+    """
+    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2",
+                       save_folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2",
                        is_baseline=True,
-                       baseline_range=(0.3, 0.5))
+                       baseline_range=(0, 0.2))
 
     # data = np.load("../data/eeg/hc/2base_-1.5_0.5_nobaseline/eeg_preprocessing_data.npy")
     # print(data.shape)

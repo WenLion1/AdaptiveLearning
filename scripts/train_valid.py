@@ -216,7 +216,7 @@ if __name__ == "__main__":
     n_epoch = 1000
 
     # 模型参数
-    model_name = "lstm"
+    model_name = "rnn"
     input_size = 489
     hidden_size = 16
     num_layers = 1
@@ -228,16 +228,16 @@ if __name__ == "__main__":
     learning_rate = 1e-4
     l2_decay = 1e-8
     n_epochs = int(1e5)
-    patience = 5
+    patience = 2
     warmup_epochs = 2
     tol = 1e-4
     saving_name = os.path.join(model_dir,
-                               f'{model_name}_layers_{num_layers}_hidden_{hidden_size}_input_{input_size}.h5')
+                               f'test_OB_first.h5')
 
     # load dataframes
     data_dir = '../data/240_rule'
-    df_train = pd.read_csv(os.path.join(data_dir, 'df_train_combine.csv'))
-    df_valid = pd.read_csv(os.path.join(data_dir, 'df_valid_combine.csv'))
+    df_train = pd.read_csv(os.path.join(data_dir, 'df_train_combine_OB_first.csv'))
+    df_valid = pd.read_csv(os.path.join(data_dir, 'df_valid_combine_OB_first.csv'))
 
     # build dataloaders
     dataset_train = generate_dataset(df_train,

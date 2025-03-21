@@ -131,44 +131,31 @@ if __name__ == "__main__":
     #                         output_folder="../data/sub/hc")
 
     # 读取数据
-    data = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")  # 形状 (27, 114960)
+    rdm1 = np.load("../results/numpy/model/sub/test_OB_first/train_OB_first_test_OB_first.npy")
+    rdm2 = np.load("../results/numpy/model/sub/test_OB_first/train_OB_first_test_CP_first.npy")
+    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy", mmap_mode="r")
+    print(rdm1.shape)
+    print(rdm2.shape)
 
-    # **Step 1: 计算原始 RDM**
-    original_rdm = compute_rdm(data)
+    # 计算Spearman等级相关系数
+    corr_coef, p_value = spearmanr(eeg_rdm[:,200,:].flatten(), rdm1.flatten())
+    print(f"Spearman等级相关系数: {corr_coef}, p值: {p_value}")
 
-    # **Step 2-3: 生成 3000 个随机置换 RDM**
-    num_permutations = 3000
-    permuted_rdms = np.zeros((num_permutations, 27, 27))
+    # # 置换测试
+    # n_permutations = 1000
+    # permuted_corrs = []
+    # for _ in range(n_permutations):
+    #     # 随机打乱rdm2的行和列
+    #     permuted_rdm2 = rdm2[np.random.permutation(rdm2.shape[0]), :]
+    #     permuted_rdm2 = permuted_rdm2[:, np.random.permutation(rdm2.shape[1])]
+    #     # 计算Spearman等级相关系数
+    #     permuted_corr, _ = spearmanr(rdm1.flatten(), permuted_rdm2.flatten())
+    #     permuted_corrs.append(permuted_corr)
+    #
+    # # 计算p值
+    # p_value = np.mean(np.abs(permuted_corrs) >= np.abs(corr_coef))
+    # print(f"置换测试p值: {p_value}")
 
-    for i in range(num_permutations):
-        print("循环: ", i)
-        # 沿着第二维打乱数据（每行独立打乱）
-        shuffled_data = np.apply_along_axis(np.random.permutation, axis=1, arr=data)
-
-        # 计算打乱后的 RDM
-        permuted_rdms[i] = compute_rdm(shuffled_data)
-
-    # **Step 4: 计算原始 RDM 在置换分布中的位置**
-    # 这里可以选取某些统计量，比如均值或特定位置的值进行比较
-    original_mean = np.mean(original_rdm)
-    permuted_means = np.mean(permuted_rdms, axis=(1, 2))  # 对每个置换 RDM 求均值
-
-    # 计算原始 RDM 均值在置换分布中的百分位
-    p_value = np.mean(permuted_means >= original_mean)
-
-    # **Step 5: 绘制分布直方图**
-    plt.hist(permuted_means, bins=50, color='gray', alpha=0.7, label="Permutation Distribution")
-    plt.axvline(original_mean, color='red', linestyle='dashed', linewidth=2, label="Original RDM Mean")
-    plt.xlabel("Mean RDM Distance")
-    plt.ylabel("Frequency")
-    # plt.title(f"Permutation Test (p={p_value:.5f})")
-    plt.legend()
-    plt.show()
-
-    # **Step 6: 输出结果**
-    print(f"原始 RDM 的均值: {original_mean:.5f}")
-    print(f"随机置换 RDM 分布的均值: {np.mean(permuted_means):.5f} ± {np.std(permuted_means):.5f}")
-    print(f"原始 RDM 在置换分布中的 p 值: {p_value:.5f}")
 
     # raw = mne.io.read_epochs_eeglab('C:/Learn/Project/bylw/eeg/2 remove channels + waterprint/lal-hc-453-task.set')
     #

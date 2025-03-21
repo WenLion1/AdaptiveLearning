@@ -1287,14 +1287,17 @@ if __name__ == "__main__":
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
 
     # # 批量产生不相似性矩阵
-    # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
+    # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/test_OB_first",
     #                                saving_base_path="../results/png/sub/hc",
-    #                                matrix_base_path="../results/numpy/model/sub/hc",
+    #                                matrix_base_path="../results/numpy/model/sub/test_OB_first",
     #                                is_number_label=False)
 
-    merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
-                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_OB.npy",
-                          keyword="reverse")
+    merge_model_rdm_files(root_dir="../results/numpy/model/sub/test_OB_first",
+                          save_path="../results/numpy/model/sub/test_OB_first/train_OB_first_test_CP_first.npy",
+                          keyword="reverse.npy")
 
-    # data = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
-    # print(data.shape)
+
+    # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt").numpy()
+    # print(hidden_states[0])
+    # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_reverse.pt").numpy()
+    # print(hidden_states[240])

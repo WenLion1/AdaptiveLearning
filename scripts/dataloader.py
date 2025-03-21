@@ -29,10 +29,12 @@ def generate_dist_mean(min_n_trail=5,
                        ob_min_angle=-10,
                        ob_max_angle=10,
                        combine_trail_num=240,
-                       trail_type="CP"):
+                       trail_type="CP",
+                       first_type="CP",):
     """
     生成每回合的落点均值（大炮角度）
 
+    :param first_type:
     :param ob_min_angle: OB情况下的最小角度
     :param ob_max_angle: OB情况下的最大角度
     :param cp_min_angle: 改变点的最小角度
@@ -109,7 +111,11 @@ def generate_dist_mean(min_n_trail=5,
         if all_n_trail % combine_trail_num != 0:
             print("trail总数无法整除每个epoch的个数")
         else:
-            flag = 1
+            if first_type == "CP":
+                flag = 1
+            elif first_type == "OB":
+                flag = -1
+
             for i in range(int(all_n_trail / combine_trail_num)):
                 if flag == 1:
                     now_trails = 0  # 初始化为0，确保能正确计算
@@ -179,10 +185,12 @@ def generate_outcome_angle(df,
                            oddball_angle_range_min=100,
                            oddball_angle_range_max=180,
                            combine_trail_num=240,
-                           trail_type="CP"):
+                           trail_type="CP",
+                           first_type="CP",):
     """
     根据distMean生成实际落点
 
+    :param first_type:
     :param oddball_angle_range_max: 奇异点的最大角度差
     :param oddball_angle_range_min: 奇异点最小角度差
     :param oddball_max: 奇异点最大间隔trail数
@@ -219,7 +227,10 @@ def generate_outcome_angle(df,
     elif trail_type == "combine":
         total_trials = len(df)
         num_epochs = total_trials // combine_trail_num
-        current_trail_type = "CP"  # 初始化为CP
+        if first_type == "CP":
+            current_trail_type = "CP"  # 初始化为CP
+        else:
+            current_trail_type = "OB"
 
         for epoch in range(num_epochs):
             start_index = epoch * combine_trail_num
@@ -362,18 +373,24 @@ if __name__ == "__main__":
     # df_test_OB = generate_outcome_angle(df_test_OB,
     #                                     trail_type="OB", )
     #
-    # df_train_combine = generate_dist_mean(all_n_trail=240000,
-    #                                       trail_type="combine")
-    # df_train_combine = generate_outcome_angle(df_train_combine,
-    #                                           trail_type="combine", )
-    # df_valid_combine = generate_dist_mean(all_n_trail=240000,
-    #                                       trail_type="combine")
-    # df_valid_combine = generate_outcome_angle(df_valid_combine,
-    #                                           trail_type="combine", )
-    # df_test_combine = generate_dist_mean(all_n_trail=24000,
-    #                                      trail_type="combine")
-    # df_test_combine = generate_outcome_angle(df_test_combine,
-    #                                          trail_type="combine", )
+    df_train_combine = generate_dist_mean(all_n_trail=240000,
+                                          trail_type="combine",
+                                          first_type="OB",)
+    df_train_combine = generate_outcome_angle(df_train_combine,
+                                              trail_type="combine",
+                                              first_type="OB",)
+    df_valid_combine = generate_dist_mean(all_n_trail=240000,
+                                          trail_type="combine",
+                                          first_type="OB",)
+    df_valid_combine = generate_outcome_angle(df_valid_combine,
+                                              trail_type="combine",
+                                              first_type="OB",)
+    df_test_combine = generate_dist_mean(all_n_trail=24000,
+                                         trail_type="combine",
+                                         first_type="OB",)
+    df_test_combine = generate_outcome_angle(df_test_combine,
+                                             trail_type="combine",
+                                             first_type="OB",)
 
     # csv_path = "../data/df_test_CP_100.csv"
     # df_OB_in_CP = pd.read_csv(csv_path)
@@ -396,9 +413,9 @@ if __name__ == "__main__":
     # df_valid_OB.to_csv(os.path.join(data_dir, 'df_valid_OB.csv'), index=False)
     # df_test_OB.to_csv(os.path.join(data_dir, 'df_test_OB_temp.csv'), index=False)
     #
-    # df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine.csv'), index=False)
-    # df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine.csv'), index=False)
-    df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine_100.csv'), index=False)
+    df_train_combine.to_csv(os.path.join(data_dir, 'df_train_combine_OB_first.csv'), index=False)
+    df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine_OB_first.csv'), index=False)
+    df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine_OB_first.csv'), index=False)
 
     # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
     # #
