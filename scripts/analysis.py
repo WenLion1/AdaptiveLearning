@@ -1142,7 +1142,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                 saving_path = os.path.join(
                     saving_base_path,
                     subfolder_name,
-                    f"model_dm_CP.png"
+                    f"{pt_file.split('.pt')[0]}.png"
                 )
                 matrix_save_path = os.path.join(
                     matrix_base_path,
@@ -1160,7 +1160,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                 print(f"正在处理 {pt_file_path}，保存到 {saving_path} 和 {matrix_save_path}...")
                 pairwise_distance_matrix(
                     hidden_states,
-                    saving_path=None,
+                    saving_path=saving_path,
                     is_number_label=is_number_label,
                     save_matrix_path=matrix_save_path
                 )
@@ -1205,7 +1205,7 @@ def merge_model_rdm_files(root_dir, save_path, keyword="combine"):
 
         # 只支持 1D 数组，转换为 (1, N) 以便后续合并
         if data.ndim == 1:
-            data = data[np.newaxis, :]  # 变成 (1, 20)
+            data = data[np.newaxis, :]
         else:
             print(f"警告: {npy_file} 不是 1D 数组，跳过。")
             continue
@@ -1214,7 +1214,7 @@ def merge_model_rdm_files(root_dir, save_path, keyword="combine"):
 
     # 确保所有数组的形状兼容
     try:
-        merged_array = np.concatenate(all_arrays, axis=0)  # 按行合并成 (N, 20)
+        merged_array = np.concatenate(all_arrays, axis=0)
         np.save(save_path, merged_array)
         print(f"合并完成，数据已保存到 {save_path}")
     except ValueError as e:
@@ -1287,14 +1287,14 @@ if __name__ == "__main__":
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
 
     # # 批量产生不相似性矩阵
-    # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/test_OB_first",
-    #                                saving_base_path="../results/png/sub/hc",
-    #                                matrix_base_path="../results/numpy/model/sub/test_OB_first",
+    # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
+    #                                saving_base_path=None,
+    #                                matrix_base_path="../results/numpy/model/sub/hc",
     #                                is_number_label=False)
 
-    merge_model_rdm_files(root_dir="../results/numpy/model/sub/test_OB_first",
-                          save_path="../results/numpy/model/sub/test_OB_first/train_OB_first_test_CP_first.npy",
-                          keyword="reverse.npy")
+    merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
+                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_remove.npy",
+                          keyword="reverse")
 
 
     # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt").numpy()

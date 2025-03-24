@@ -385,10 +385,14 @@ def read_mat_files_from_folder(folder_path,
 
 def computer_eeg_rdm(eeg_data,
                      save_path,
-                     metric='euclidean', ):
+                     fig_save_path=None,
+                     metric='euclidean',
+                     save_time=200,
+                     is_number_label=False,):
     """
     计算eeg的rdm
 
+    :param fig_save_path:
     :param metric:
     :param eeg_data: (sub, trial, channel, time)
     :param save_path:
@@ -405,8 +409,34 @@ def computer_eeg_rdm(eeg_data,
             trial_features = eeg_data[sub, :, :, t]  # (trial, channel)
 
             # 计算 RDM
-            rdm = pdist(trial_features, metric=metric)  # 计算 pairwise 距离
+            rdm = pdist(trial_features, metric=metric)  # 计算 pairwise 距
             rdm_results[sub, t] = rdm  # 存储到结果矩阵
+
+            if t == save_time and fig_save_path is not None:
+                dissimilarity_matrix = squareform(rdm)
+                # 绘制热图
+                plt.figure(figsize=(10, 8))
+                plt.imshow(dissimilarity_matrix, cmap="viridis", aspect="auto")
+                plt.colorbar(label="Dissimilarity")
+
+                if is_number_label:
+                    # 如果需要在坐标轴显示坐标数字
+                    plt.xticks(ticks=np.arange(dissimilarity_matrix.shape[1]),
+                               labels=np.arange(dissimilarity_matrix.shape[1]) + 1)
+                    plt.yticks(ticks=np.arange(dissimilarity_matrix.shape[0]),
+                               labels=np.arange(dissimilarity_matrix.shape[0]) + 1)
+                else:
+                    # 如果不需要显示坐标数字
+                    plt.xticks([])
+                    plt.yticks([])
+
+                plt.gca().invert_yaxis()  # 反转纵轴
+                plt.title("Dissimilarity Matrix")
+                plt.xlabel("Trial")
+                plt.ylabel("Trial")
+
+                fig_save = os.path.join(fig_save_path,f"{sub}_{save_time}.png")
+                plt.savefig(fig_save, dpi=300)
     np.save(save_path, rdm_results)
 
 
@@ -632,82 +662,88 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
                                             time_range,
                                             time_min,
                                             time_max,
-                                            re_threhold,):
+                                            re_threhold,
+                                            is_every=0):  # 新增参数 is_every
     """
     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
 
-    :param re_threhold:
-    :param eeg_rdm:
-    :param model_rdm:
-    :param time_range:
-    :param time_min:
-    :param time_max:
+    :param eeg_rdm: EEG 的 RDM 数据
+    :param model_rdm: 模型的 RDM 数据
+    :param time_range: 时间范围
+    :param time_min: 最小时间点
+    :param time_max: 最大时间点
+    :param re_threhold: 显著性检验的阈值
+    :param is_every: 是否绘制每个被试的曲线 (1: 是, 0: 否)
     :return:
     """
 
     sub_num = eeg_rdm.shape[0]
     for s in range(sub_num):
         rsa_results = np.zeros((sub_num, time_range[1] - time_range[0] + 1))
-        println("leave-one-out sub number :", s)
+        print("leave-one-out sub number :", s)  # 修复 println 为 print
         submat = np.delete(np.arange(sub_num), s)
 
         for z in submat:
             sub_eeg_data = eeg_rdm[z, :, :]  # (851, 114960)
             sub_model_data = model_rdm[z, :]  # (114960,)
-            print(sub_model_data)
             sub_model_data_normalized = zscore(sub_model_data)
+            print(sub_model_data)
 
-            for t in range(time_range[0] - 1, time_range[1]):
+            for t in range(time_range[0], time_range[1] + 1):
                 sub_eeg_data_cat = sub_eeg_data[t, :]
                 sub_eeg_data_normalized = zscore(sub_eeg_data_cat)
 
-                spearman_corr, p_value = pearsonr(sub_model_data_normalized, sub_eeg_data_normalized)
-                rsa_results[z, t - (time_range[0] - 1)] = spearman_corr
+                spearman_corr, p_value = spearmanr(sub_model_data_normalized, sub_eeg_data_normalized)
+                rsa_results[z, t - time_range[0]] = spearman_corr
 
-        time_points = np.linspace(time_min, time_max, num=rsa_results.shape[1])  # 假设从-200ms到800ms
+        time_points = np.linspace(time_min, time_max, num=rsa_results.shape[1])
 
         # 创建画布
         plt.figure(figsize=(6, 5))
 
-        # # 绘制每个被试的相关性曲线
-        # for z in range(sub_num):
-        #     plt.plot(time_points, rsa_results[z, :], color='gray', linewidth=0.7, alpha=0.5)
+        # 如果 is_every 为 1，则绘制每个被试的相关性曲线
+        if is_every == 1:
+            for z in range(sub_num):
+                plt.plot(time_points, rsa_results[z, :], color='gray', linewidth=0.7, alpha=0.5, label='_nolegend_')
 
         # 计算平均相关系数曲线
-        mean_corr = np.mean(rsa_results, axis=0)  # 所有被试平均
-        sem_corr = np.std(rsa_results, axis=0) / np.sqrt(rsa_results.shape[0])  # 计算 SEM
+        mean_corr = np.mean(rsa_results, axis=0)
+        sem_corr = np.std(rsa_results, axis=0) / np.sqrt(rsa_results.shape[0])
 
         # 绘制主曲线（所有被试平均）
-        plt.plot(time_points, mean_corr,
-                 color='red',
-                 linewidth=2.5,
-                 label='Mean Correlation')
+        plt.plot(time_points, mean_corr, color='red', linewidth=2.5, label='Mean Correlation')
         plt.fill_between(time_points, mean_corr - sem_corr, mean_corr + sem_corr, color='red', alpha=0.3)
 
-        # 绘制零线
+        # 绘制零线和竖直虚线
         plt.axhline(0, color='black', linestyle='--', linewidth=1)
-        # 添加 x=0 的竖直虚线
         plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
 
-        tail = 1
-        if re_threhold > 0:
-            tail = 1
-        elif re_threhold < 0:
-            tail = -1
+        # 选择 tail 值
+        tail = 1 if re_threhold > 0 else -1
+
+        # 进行显著性检验
         t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results,
                                                                          threshold=re_threhold,
                                                                          n_permutations=5000,
                                                                          tail=tail)
 
-        significant_clusters = np.where(cluster_pv < 0.05)[0]  # 选择 p < 0.05 的聚类
+        significant_clusters = np.where(cluster_pv < 0.05)[0]
+
+        for i_clu, p_val in enumerate(cluster_pv):
+            time_indices = clusters[i_clu][0]
+            sig_times = time_points[time_indices]
+
+            # 判断显著性
+            significance = "显著" if p_val < 0.05 else "不显著"
+
+            print(f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, "
+                  f"p = {p_val:.5f} ({significance})")
 
         # 画显著性点
         for i_clu in significant_clusters:
-            time_indices = clusters[i_clu][0]  # 取显著时间索引
-            sig_times = time_points[time_indices]  # 转换为实际时间
-            # 打印 cluster 详细信息
-            print(
-                f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
+            time_indices = clusters[i_clu][0]
+            sig_times = time_points[time_indices]
+            print(f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
             plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min()), color='red', s=5)
 
         plt.xlabel('Time (ms)', fontsize=12)
@@ -715,23 +751,24 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
         plt.title('Time-resolved RSA Correlation with Model RDM', fontsize=14)
 
         # 自动调整坐标轴范围
-        plt.xlim(time_points.min(), time_points.max())  # 根据时间范围自动调整 X 轴
-        # plt.ylim(np.min(rsa_results) - 0.02, np.max(rsa_results) + 0.02)  # 根据相关性数据动态调整 Y 轴
-        plt.ylim(-0.02, 0.1)
+        plt.xlim(time_points.min(), time_points.max())
+        # plt.ylim(-0.02, 0.1)
+        # 自动调整 Y 轴范围，留出一些边距
+        y_min = np.min(rsa_results) - 0.02
+        y_max = np.max(rsa_results) + 0.02
+        plt.ylim(y_min, y_max)
 
-        # 处理图例（避免重复标签）
+        # 处理图例，避免重复标签
         handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))  # 去重
+        by_label = dict(zip(labels, handles))
         plt.legend(by_label.values(), by_label.keys(), loc='upper right')
 
         plt.grid(alpha=0.3)
         plt.tight_layout()
-        # **保存图像，不显示**
-        plt.savefig(f"rsa_correlation_{s}.png", dpi=300, bbox_inches='tight')
 
-        # 关闭图像，释放内存
+        # 保存图像
+        plt.savefig(f"rsa_correlation_{s}.png", dpi=300, bbox_inches='tight')
         plt.close()
-        awsdasd
 
 
 if __name__ == "__main__":
@@ -802,12 +839,13 @@ if __name__ == "__main__":
     #                                               threshold=0.7)
     # print(significant_points)
     #
-    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_preprocessing_data_baseline_ob.npy", mmap_mode="r")
+    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_preprocessing_data_baseline_cp_remove.npy", mmap_mode="r")
     # computer_eeg_rdm(eeg_data=data,
-    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy")
+    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_cp_remove.npy",
+    #                  fig_save_path=None)
 
-    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy", mmap_mode="r")
-    model_rdm = np.load("../results/numpy/model/sub/test_CP_first/train_CP_first_test_CP_first.npy")
+    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_cp_remove.npy", mmap_mode="r")
+    model_rdm = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_remove.npy")
     # model_rdm = model_rdm.T
     # np.random.shuffle(model_rdm)
     # model_rdm = model_rdm.T
@@ -819,4 +857,19 @@ if __name__ == "__main__":
                                             time_range=(100, 850),
                                             time_min=-1,
                                             time_max=0.5,
-                                            re_threhold=-2,)
+                                            re_threhold=-2,
+                                            is_every=1,)
+
+    # rdm1 = np.load("../results/numpy/eeg_rdm/hc/test/456.npy")
+    # rdm2 = np.load("../results/numpy/eeg_rdm/hc/test/457.npy")
+    #
+    # print(rdm1.shape)
+    # print(rdm2.shape)
+    #
+    # batch_compute_eeg_model_rdm_correlation(eeg_rdm=rdm1,
+    #                                         model_rdm=rdm2,
+    #                                         time_range=(100, 850),
+    #                                         time_min=-1,
+    #                                         time_max=0.5,
+    #                                         re_threhold=2,
+    #                                         is_every=1,)

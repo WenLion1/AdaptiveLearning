@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import torch
+from mne.stats import permutation_cluster_1samp_test
 from scipy.spatial.distance import squareform
 from scipy.stats import vonmises, zscore, spearmanr
 
@@ -122,58 +123,154 @@ def compare_rdm_matrices(eeg_rdm, model_rdm):
     return similarity_matrix
 
 
+def calculate_and_plot_correlation(rdm1, rdm2, time_min=-1, time_max=0.5, threshold=-2.0):
+    # 确保数据维度一致
+    if rdm1.shape != rdm2.shape:
+        raise ValueError("rdm1 和 rdm2 形状不一致，无法计算相关性")
+
+    n_times = rdm1.shape[1]
+    correlations = np.zeros(n_times)
+    p_values = np.zeros(n_times)
+
+    # 逐时间点计算 Spearman 相关性
+    for t in range(n_times):
+        corr, p_val = spearmanr(rdm1[0, t, :], rdm2[0, t, :])
+        correlations[t] = corr
+        p_values[t] = p_val
+
+    # 绘制相关性曲线
+    time_points = np.linspace(time_min, time_max, n_times)
+    plt.figure(figsize=(10, 6))
+    plt.plot(time_points, correlations, color='red', label='Spearman Correlation')
+    plt.axhline(0, color='black', linestyle='--', linewidth=1)
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Correlation')
+    plt.title('Time-resolved RDM Correlation')
+
+    # 显著性检验
+    rsa_results = correlations.reshape(1, -1)
+    tail = 1
+    if threshold < 0:
+        tail = -1
+    t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(
+        rsa_results,
+        threshold=threshold,
+        n_permutations=5000,
+        tail=tail
+    )
+
+    # 标出显著相关区段
+    significant_clusters = np.where(cluster_pv < 0.05)[0]
+    for i_clu in significant_clusters:
+        time_indices = clusters[i_clu][0]
+        sig_times = time_points[time_indices]
+        plt.fill_between(sig_times, correlations.min(), correlations.max(), color='red', alpha=0.3,
+                         label='p < 0.05' if i_clu == 0 else "")
+
+    # 图例和显示
+    plt.legend(loc='upper right')
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+def convert_fif_to_npy(folder_path, baseline=1, baseline_range=(0, 0.2)):
+    """
+    将指定文件夹中的所有 .fif 文件转换为 .npy 文件，并保存到原文件夹中。
+
+    参数:
+        folder_path (str): 包含 .fif 文件的文件夹路径。
+    """
+    # 遍历文件夹中的所有文件
+    for filename in os.listdir(folder_path):
+        # 检查文件扩展名是否为 .fif
+        if filename.endswith(".fif"):
+            # 构造完整的文件路径
+            fif_file_path = os.path.join(folder_path, filename)
+            # 构造对应的 .npy 文件路径
+            npy_file_path = os.path.join(folder_path, filename.replace(".fif", ".npy"))
+
+            epochs = mne.read_epochs(fif_file_path, preload=True)
+
+            if baseline:
+                # 应用基线校正
+                epochs.apply_baseline(baseline_range)
+
+            data = epochs.get_data(picks=['eeg'])
+
+            # 保存为 .npy 文件
+            np.save(npy_file_path, data)
+
+            print(f"已将 {fif_file_path} 转换为 {npy_file_path}")
+
+
+def calculate_correlation_significance(data1, data2, time_points, n_permutations=1000):
+    """
+    计算每个时间点的两个文件之间的相关值，并标出显著相关的区间。
+
+    参数:
+        data1 (np.ndarray): 第一个数据文件，形状为 (subjects, time_points, rdm_size)。
+        data2 (np.ndarray): 第二个数据文件，形状为 (subjects, time_points, rdm_size)。
+        time_points (int): 时间点的数量。
+        n_permutations (int): 置换测试的次数。
+    """
+    correlations = []
+    p_values = []
+
+    for t in range(time_points):
+        print("t: ", t)
+        # 提取当前时间点的数据
+        rdm1 = data1[:, t, :]
+        rdm2 = data2[:, t, :]
+
+        # 计算每个被试的相关性
+        subject_correlations = []
+        for subject in range(rdm1.shape[0]):
+            print("subject: ", subject)
+            corr_coef, _ = spearmanr(rdm1[subject], rdm2[subject])
+            subject_correlations.append(corr_coef)
+
+        # 计算平均相关性
+        avg_corr_coef = np.mean(subject_correlations)
+        correlations.append(avg_corr_coef)
+
+        # # 置换测试
+        # permuted_corrs = []
+        # for _ in range(n_permutations):
+        #     # 随机打乱rdm2的行
+        #     permuted_rdm2 = rdm2[np.random.permutation(rdm2.shape[0]), :]
+        #     permuted_subject_correlations = []
+        #     for subject in range(rdm1.shape[0]):
+        #         permuted_corr_coef, _ = spearmanr(rdm1[subject], permuted_rdm2[subject])
+        #         permuted_subject_correlations.append(permuted_corr_coef)
+        #     permuted_corrs.append(np.mean(permuted_subject_correlations))
+        #
+        # # 计算p值
+        # p_value = np.mean(np.abs(permuted_corrs) >= np.abs(avg_corr_coef))
+        # p_values.append(p_value)
+
+    # 绘制相关值和显著性
+    plt.figure(figsize=(10, 5))
+    plt.plot(correlations, label='Average Correlation Coefficient')
+    plt.plot(p_values, label='p-value')
+    plt.axhline(y=0.05, color='r', linestyle='--', label='Significance Threshold (0.05)')
+    plt.xlabel('Time Points')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.title('Average Correlation and Significance over Time')
+    plt.show()
+
+
 if __name__ == "__main__":
-    # merge_csv_in_subfolders(csv1_path="../data/sub/hc/403/ADL_B_403_DataCP_403.csv",
-    #                csv2_path="../data/sub/hc/403/ADL_B_403_DataOddball_403.csv",
-    #                output_path="../data/sub/hc/403/combine_403.csv", )
+    cp1 = np.load("../results/numpy/model/sub/hc/456/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
+    cp2 = np.load("../results/numpy/model/sub/hc/457/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
+    cp3 = np.load("../results/numpy/model/sub/hc/458/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
 
-    # merge_csv_in_subfolders(parent_folder="../data/sub/hc",
-    #                         output_folder="../data/sub/hc")
+    ob1 = np.load("../results/numpy/model/sub/ob/405/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
+    ob2 = np.load("../results/numpy/model/sub/ob/407/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
+    ob3 = np.load("../results/numpy/model/sub/ob/408/rdm/not_remove/rnn_layers_1_hidden_16_input_489_CP.npy")
+    print(cp1.shape)
 
-    # 读取数据
-    rdm1 = np.load("../results/numpy/model/sub/test_OB_first/train_OB_first_test_OB_first.npy")
-    rdm2 = np.load("../results/numpy/model/sub/test_OB_first/train_OB_first_test_CP_first.npy")
-    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_ob.npy", mmap_mode="r")
-    print(rdm1.shape)
-    print(rdm2.shape)
-
-    # 计算Spearman等级相关系数
-    corr_coef, p_value = spearmanr(eeg_rdm[:,200,:].flatten(), rdm1.flatten())
-    print(f"Spearman等级相关系数: {corr_coef}, p值: {p_value}")
-
-    # # 置换测试
-    # n_permutations = 1000
-    # permuted_corrs = []
-    # for _ in range(n_permutations):
-    #     # 随机打乱rdm2的行和列
-    #     permuted_rdm2 = rdm2[np.random.permutation(rdm2.shape[0]), :]
-    #     permuted_rdm2 = permuted_rdm2[:, np.random.permutation(rdm2.shape[1])]
-    #     # 计算Spearman等级相关系数
-    #     permuted_corr, _ = spearmanr(rdm1.flatten(), permuted_rdm2.flatten())
-    #     permuted_corrs.append(permuted_corr)
-    #
-    # # 计算p值
-    # p_value = np.mean(np.abs(permuted_corrs) >= np.abs(corr_coef))
-    # print(f"置换测试p值: {p_value}")
-
-
-    # raw = mne.io.read_epochs_eeglab('C:/Learn/Project/bylw/eeg/2 remove channels + waterprint/lal-hc-453-task.set')
-    #
-    # print(type(raw))
-
-    # model1 = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm.npy")
-    # model2 = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm_copy.npy")
-    # model3 = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm_reverse.npy")
-    # print(model1.shape)
-    # print(model2.shape)
-    #
-    # array = compare_rdm_matrices(model1, model3)
-    # # 可视化 RDM
-    # plt.figure(figsize=(8, 6))
-    # plt.imshow(array, cmap='viridis', interpolation='none')
-    # plt.colorbar(label='Dissimilarity')
-    # plt.title('Representational Dissimilarity Matrix (RDM)', fontsize=16)
-    # plt.xlabel('Sub', fontsize=12)
-    # plt.ylabel('Sub', fontsize=12)
-    # plt.tight_layout()
-    # plt.show()
+    # 计算 Spearman 相关性
+    spearman_corr, spearman_p = spearmanr(ob3.flatten(), ob1.flatten())
+    print(f"Spearman相关系数: {spearman_corr}, p值: {spearman_p}")

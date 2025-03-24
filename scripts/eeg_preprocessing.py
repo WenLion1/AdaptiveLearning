@@ -142,26 +142,29 @@ def cut_epoch_two_part(raw,
                        events,
                        tmin=-0.7,
                        tmax=1,
-                       event_id=19):
+                       event_id=19,
+                       is_pre=1):
     """
-    将要分析的 EEG 片段和 6 号 mark 之后的 0.2s 片段拼接在一起。
+    将要分析的 EEG 片段和 6 号 mark 之后的 0.2s 片段拼接在一起，并根据 is_pre 参数选择前或后 240 个 epochs。
 
     :param raw: 原始 EEG 数据 (mne.io.Raw)
     :param events: 事件信息 (array, shape: n_events x 3)
     :param tmin: 事件后的最小时间（默认 -0.7s）
     :param tmax: 事件后的最大时间（默认 1s）
     :param event_id: 要提取的事件 ID（默认 19）
+    :param is_pre: 1 表示取前 240 个，0 表示取后 240 个
     :return: 拼接后的 epochs (mne.Epochs)
     """
 
+    print("event_id: ", event_id)
     # 1. 提取目标事件（event_id=19）的 epochs
     epochs_main = mne.Epochs(raw, events, event_id=event_id, tmin=tmin, tmax=tmax,
                              baseline=None, preload=True)
 
     baseline_tmin = 0  # 取 event_id=6 之后0.2s
-    baseline_tmax = 0.5  # 事件发生时刻
+    baseline_tmax = 0.2
 
-    # 3. 提取基线 epochs
+    # 2. 提取基线 epochs
     epochs_baseline = mne.Epochs(raw, events, event_id=event_id + 5, tmin=baseline_tmin, tmax=baseline_tmax,
                                  baseline=None, preload=True)
 
@@ -172,20 +175,35 @@ def cut_epoch_two_part(raw,
     if len(epochs_main) != len(epochs_baseline):
         raise ValueError("epochs_main 或 epochs_baseline长度不同，无法合并")
 
+    # 获取数据
     main_data = epochs_main.get_data()
     baseline_data = epochs_baseline.get_data()
+
     # 复制数据并进行移动
     shifted_data = np.copy(baseline_data)
     shifted_data[1:] = baseline_data[:-1]
 
-    # 4. 逐个 trial 拼接（concatenate 方式）
-    combined_data = np.concatenate([shifted_data,
-                                    main_data], axis=-1)
+    # 3. 逐个 trial 拼接（concatenate 方式）
+    combined_data = np.concatenate([shifted_data, main_data], axis=-1)
 
-    # 5. 生成新的 epochs
-    new_info = epochs_main.info  # 继承原 epochs 的信息
-    combined_epochs = mne.EpochsArray(combined_data, new_info, tmin=baseline_tmin,
-                                      events=epochs_main.events)
+    # 4. 根据 is_pre 参数选择前 240 或后 240 个
+    if len(combined_data) < 240:
+        raise ValueError("数据量不足 240 个，无法按需求切分")
+
+    if is_pre == 1:
+        print("提取前 240 个 epochs")
+        combined_data = combined_data[:240]
+        # 5. 生成新的 epochs
+        new_info = epochs_main.info
+        combined_epochs = mne.EpochsArray(combined_data, new_info, tmin=baseline_tmin, events=epochs_main.events[:240])
+        print("len(combined_epochs): ", len(combined_epochs))
+    elif is_pre == 0:
+        print("提取后 240 个 epochs")
+        combined_data = combined_data[-240:]
+        # 5. 生成新的 epochs
+        new_info = epochs_main.info
+        combined_epochs = mne.EpochsArray(combined_data, new_info, tmin=baseline_tmin, events=epochs_main.events[-240:])
+        print("len(combined_epochs): ", len(combined_epochs))
 
     return combined_epochs
 
@@ -321,10 +339,12 @@ def batch_eeg_preprocessing(eeg_folder,
                             t_max=0.5,
                             event_id="2   ",
                             save_path="../data/eeg/hc/",
-                            baseline_range=(-3, -2.8)):
+                            baseline_range=(-3, -2.8),
+                            is_pre=1,):
     """
     批量预处理一个文件夹内的eeg
 
+    :param is_pre:
     :param baseline_range:
     :param is_two_part:
     :param is_baseline:
@@ -354,9 +374,9 @@ def batch_eeg_preprocessing(eeg_folder,
 
             event_id_2 = events_id.get(event_id)
 
-            events = change_one_mark(events=events,
-                                     min=1,
-                                     max=event_id_2, )
+            # events = change_one_mark(events=events,
+            #                          min=1,
+            #                          max=event_id_2, )
 
             # events = extract_events(events,
             #                         target_event_ids=[event_id_2+8, event_id_2+9],
@@ -382,7 +402,8 @@ def batch_eeg_preprocessing(eeg_folder,
                                             events,
                                             tmin=t_min,
                                             tmax=t_max,
-                                            event_id=event_id_2, )
+                                            event_id=event_id_2,
+                                            is_pre=is_pre,)
             else:
                 epochs = cut_epoch(raw,
                                    events,
@@ -452,7 +473,7 @@ if __name__ == "__main__":
     #              'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
     # eogs_list = ['E8', 'E25', 'E126', 'E127']
     #
-    # save_path = "../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.5"
+    # save_path = "../data/eeg/hc/test"
     # # 批量预处理
     # batch_eeg_preprocessing(r"C:\Learn\Project\bylw\eeg\1",
     #                         t_min=-1,
@@ -463,7 +484,8 @@ if __name__ == "__main__":
     #                         edge_list=edge_list,
     #                         eogs_list=eogs_list,
     #                         save_path=save_path,
-    #                         baseline_range=(0, 0.5))
+    #                         baseline_range=(0, 0.2),
+    #                         is_pre=1,)
 
     """
     做ERP

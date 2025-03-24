@@ -102,6 +102,9 @@ def evaluate_model(data_dir,
         for time_step in range(hidden_layer.shape[1]):
             hidden_state_at_time = hidden_layer[:, time_step, :].cpu().detach().numpy()
             hidden_states.append(hidden_state_at_time)
+        print(len(hidden_states))
+        print(hidden_states[0])
+        print("__________________________")
 
         angles_rad = np.radians(outcome_true.cpu().numpy())
         sin = torch.tensor(np.sin(angles_rad)).to(device)
@@ -217,10 +220,8 @@ def batch_evaluate(data_folder_path,
                 test_type = "OB"
             elif "reverse" in csv_file:
                 test_type = "reverse"
-            elif "combine" in csv_file:
-                test_type = "combine"
             else:
-                test_type = "unknown"
+                test_type = "combine"
 
             # 调用评估模型函数
             evaluate_model(data_dir,
@@ -242,9 +243,9 @@ def batch_evaluate(data_folder_path,
 
 if __name__ == "__main__":
     batch_evaluate(data_folder_path="../data/sub/hc",
-                   model_path="../models/240_rule/test_OB_first.h5",
-                   results_folder_path="../results/csv/sub/test_OB_first",
-                   hidden_state_save_dir="../hidden/sub/test_OB_first",
+                   model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
+                   results_folder_path="../results/csv/sub/hc",
+                   hidden_state_save_dir="../hidden/sub/hc",
                    is_save_hidden_state=1,
                    num_layers=1,
                    model_type="rnn",
