@@ -204,6 +204,9 @@ def cut_epoch_two_part(raw,
         new_info = epochs_main.info
         combined_epochs = mne.EpochsArray(combined_data, new_info, tmin=baseline_tmin, events=epochs_main.events[-240:])
         print("len(combined_epochs): ", len(combined_epochs))
+    new_info = epochs_main.info
+    combined_epochs = mne.EpochsArray(combined_data, new_info, tmin=baseline_tmin, events=epochs_main.events)
+    print("len(combined_epochs): ", len(combined_epochs))
 
     return combined_epochs
 
@@ -340,7 +343,7 @@ def batch_eeg_preprocessing(eeg_folder,
                             event_id="2   ",
                             save_path="../data/eeg/hc/",
                             baseline_range=(-3, -2.8),
-                            is_pre=1,):
+                            is_pre=1, ):
     """
     批量预处理一个文件夹内的eeg
 
@@ -403,7 +406,7 @@ def batch_eeg_preprocessing(eeg_folder,
                                             tmin=t_min,
                                             tmax=t_max,
                                             event_id=event_id_2,
-                                            is_pre=is_pre,)
+                                            is_pre=is_pre, )
             else:
                 epochs = cut_epoch(raw,
                                    events,
@@ -424,50 +427,114 @@ def batch_eeg_preprocessing(eeg_folder,
                      save_path=save_path_last, )
 
 
-def get_numpy_from_fif(folder_path,
-                       save_folder_path,
-                       is_baseline=False,
-                       baseline_range=(-0.2, 0), ):
+def get_numpy_from_fif(folder_path, is_baseline=False, baseline_range=(-0.2, 0)):
     """
-    将eeg数据提取为numpy矩阵, 要跑一点时间
+    将 EEG 数据提取为 numpy 矩阵，每个 .fif 文件保存为对应的 .npy 文件，存储在原文件夹的 npy 子文件夹中。
 
-    :param baseline_range:
-    :param is_baseline:
-    :param save_folder_path:
-    :param folder_path:
-    :return:
+    :param folder_path: .fif 文件所在的文件夹路径
+    :param is_baseline: 是否进行基线校正
+    :param baseline_range: 基线校正范围，默认(-0.2, 0)
     """
-
+    # 获取所有 .fif 文件
     fif_files = [f for f in os.listdir(folder_path) if f.endswith(".fif")]
-    eeg_data_list = []
+
+    if not fif_files:
+        print("没有找到 .fif 文件。")
+        return
+
+    # 创建 npy 文件夹
+    npy_folder_path = os.path.join(folder_path, 'npy')
+    os.makedirs(npy_folder_path, exist_ok=True)
+    print(f"所有 .npy 文件将保存至：{npy_folder_path}\n")
 
     for fif_file in fif_files:
         fif_path = os.path.join(folder_path, fif_file)
 
-        epochs = mne.read_epochs(fif_path, preload=True)
+        try:
+            # 读取 EEG 数据
+            epochs = mne.read_epochs(fif_path, preload=True)
 
-        if is_baseline:
-            # 应用基线校正
-            epochs.apply_baseline(baseline_range)
+            # 是否进行基线校正
+            if is_baseline:
+                epochs.apply_baseline(baseline_range)
 
-        data = epochs.get_data(picks=['eeg'])
+            # 获取 EEG 数据并保存
+            data = epochs.get_data(picks=['eeg'])
+            npy_file_path = os.path.join(npy_folder_path, os.path.splitext(fif_file)[0] + '.npy')
+            np.save(npy_file_path, data)
 
-        eeg_data_list.append(data)
+            print(f"处理完成：{fif_file}, 数据 shape: {data.shape}, 保存至: {npy_file_path}")
 
-        print(f"Loaded {fif_file}: shape {data.shape}")
+        except Exception as e:
+            print(f"处理 {fif_file} 时出错: {e}")
 
-    eeg_data_list = np.array(eeg_data_list)
-    if is_baseline:
-        save_path = os.path.join(save_folder_path, "eeg_preprocessing_data_baseline.npy")
-    else:
-        save_path = os.path.join(save_folder_path, "eeg_preprocessing_data.npy")
-    np.save(save_path, eeg_data_list)
+    print("\n 所有文件处理完成！")
+
+
+def autoreject_fif_files(input_folder):
+    # 定义输出文件夹路径
+    autoreject_folder = os.path.join(input_folder, "autoreject")
+    os.makedirs(autoreject_folder, exist_ok=True)
+    print(f"清洗后的数据和信息将保存至：{autoreject_folder}")
+
+    # 遍历所有 .fif 文件
+    for file_name in os.listdir(input_folder):
+        if file_name.endswith('.fif'):
+            file_path = os.path.join(input_folder, file_name)
+            print(f"\n正在处理文件: {file_name}")
+
+            try:
+                # 读取数据
+                data = mne.read_epochs(file_path, preload=True)
+
+                # 应用 AutoReject
+                ar = AutoReject(consensus=[0.9], random_state=11, verbose=True)
+                data_clean, reject_log = ar.fit_transform(data, return_log=True)
+
+                # 保存清洗后的数据
+                clean_output_path = os.path.join(autoreject_folder, f"{file_name.replace('.fif', '_clean.fif')}")
+                data_clean.save(clean_output_path, overwrite=True)
+                print(f"清洗后的数据已保存至：{clean_output_path}")
+
+                # 处理坏 Epoch 信息
+                bad_epochs_sum = sum(reject_log.bad_epochs)
+                if bad_epochs_sum > 0:
+                    print(f"检测到 {bad_epochs_sum} 个坏 Epoch")
+
+                    # # 绘制坏 Epochs
+                    # data[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
+
+                    # 保存坏 Epoch 信息
+                    bad_epochs_folder = os.path.join(autoreject_folder, "bad_epochs")
+                    os.makedirs(bad_epochs_folder, exist_ok=True)
+                    bad_epochs_path = os.path.join(bad_epochs_folder, f"{file_name.replace('.fif', '_bad_epochs.npy')}")
+                    np.save(bad_epochs_path, reject_log.bad_epochs)
+                    print(f"坏 Epoch 信息已保存至：{bad_epochs_path}")
+                else:
+                    print("没有检测到坏的 Epoch。")
+
+                # # 绘制拒绝日志
+                # reject_log.plot('horizontal')
+
+                # # 绘制平均 ERP 图
+                # data_clean.average().plot()
+
+                # 保存插值过的通道信息
+                interpolated_folder = os.path.join(autoreject_folder, "interpolated_channels")
+                os.makedirs(interpolated_folder, exist_ok=True)
+                interpolated_channels_path = os.path.join(interpolated_folder,
+                                                          f"{file_name.replace('.fif', '_interpolated_channels.npy')}")
+                np.save(interpolated_channels_path, reject_log.labels)
+                print(f"插值过的通道信息已保存至：{interpolated_channels_path}")
+
+            except Exception as e:
+                print(f"处理文件 {file_name} 时出错: {e}")
 
 
 if __name__ == "__main__":
     """
     批量预处理
-    """
+    # """
     # # 设置边缘电极和eog电极
     # edge_list = ['E1', 'E2', 'E9', 'E14', 'E15', 'E17', 'E21', 'E22', 'E26', 'E32', 'E38', 'E39', 'E43', 'E44', 'E45',
     #              'E48', 'E49', 'E108', 'E113', 'E114', 'E115', 'E119', 'E120', 'E121', 'E125', 'E128']
@@ -486,6 +553,8 @@ if __name__ == "__main__":
     #                         save_path=save_path,
     #                         baseline_range=(0, 0.2),
     #                         is_pre=1,)
+
+    # autoreject_fif_files("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2")
 
     """
     做ERP
@@ -543,8 +612,7 @@ if __name__ == "__main__":
     """
     将eeg的fif转化为numpy
     """
-    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2",
-                       save_folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2",
+    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject",
                        is_baseline=True,
                        baseline_range=(0, 0.2))
 

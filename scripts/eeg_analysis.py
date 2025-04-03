@@ -1,5 +1,7 @@
 import os
+import re
 
+import mne
 import numpy as np
 import pandas as pd
 import torch
@@ -7,6 +9,8 @@ from matplotlib import pyplot as plt
 from scipy.io import loadmat
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import pearsonr, spearmanr, ttest_1samp, zscore
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from mne.stats import permutation_cluster_test, permutation_cluster_1samp_test
 from twisted.python.util import println
@@ -386,9 +390,9 @@ def read_mat_files_from_folder(folder_path,
 def computer_eeg_rdm(eeg_data,
                      save_path,
                      fig_save_path=None,
-                     metric='euclidean',
+                     metric='correlation',
                      save_time=200,
-                     is_number_label=False,):
+                     is_number_label=False, ):
     """
     计算eeg的rdm
 
@@ -435,7 +439,7 @@ def computer_eeg_rdm(eeg_data,
                 plt.xlabel("Trial")
                 plt.ylabel("Trial")
 
-                fig_save = os.path.join(fig_save_path,f"{sub}_{save_time}.png")
+                fig_save = os.path.join(fig_save_path, f"{sub}_{save_time}.png")
                 plt.savefig(fig_save, dpi=300)
     np.save(save_path, rdm_results)
 
@@ -663,7 +667,8 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
                                             time_min,
                                             time_max,
                                             re_threhold,
-                                            is_every=0):  # 新增参数 is_every
+                                            is_every=0,
+                                            rsa_save_path='../rsa_results', ):  # 新增参数 is_every
     """
     批量计算 EEG 数据与模型 RDM 的相关性，trial_range 自动根据 epochNumbers 调整。
 
@@ -678,6 +683,8 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
     """
 
     sub_num = eeg_rdm.shape[0]
+    rsa_results_all = []  # 用于存储所有被试的 RSA 结果
+
     for s in range(sub_num):
         rsa_results = np.zeros((sub_num, time_range[1] - time_range[0] + 1))
         print("leave-one-out sub number :", s)  # 修复 println 为 print
@@ -696,15 +703,19 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
                 spearman_corr, p_value = spearmanr(sub_model_data_normalized, sub_eeg_data_normalized)
                 rsa_results[z, t - time_range[0]] = spearman_corr
 
-        time_points = np.linspace(time_min, time_max, num=rsa_results.shape[1])
-
         # 创建画布
         plt.figure(figsize=(6, 5))
+        time_points = np.linspace(time_min, time_max, num=rsa_results.shape[1])
 
         # 如果 is_every 为 1，则绘制每个被试的相关性曲线
         if is_every == 1:
             for z in range(sub_num):
-                plt.plot(time_points, rsa_results[z, :], color='gray', linewidth=0.7, alpha=0.5, label='_nolegend_')
+                plt.plot(time_points, rsa_results[z, :], color='gray', linewidth=0.7, alpha=0.5,
+                         label='_nolegend_')
+
+        # 将所有被试的 RSA 结果保存为一个 NumPy 文件
+        rsa_results = rsa_results[~np.all(rsa_results == 0, axis=1)]  # 去掉0的那一行
+        rsa_results_all.append(rsa_results)  # 记录每个被试的 RSA 结果
 
         # 计算平均相关系数曲线
         mean_corr = np.mean(rsa_results, axis=0)
@@ -743,7 +754,8 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
         for i_clu in significant_clusters:
             time_indices = clusters[i_clu][0]
             sig_times = time_points[time_indices]
-            print(f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
+            print(
+                f"Cluster {i_clu}: 时间范围 {sig_times.min():.3f} ms ~ {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
             plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min()), color='red', s=5)
 
         plt.xlabel('Time (ms)', fontsize=12)
@@ -769,6 +781,413 @@ def batch_compute_eeg_model_rdm_correlation(eeg_rdm,
         # 保存图像
         plt.savefig(f"rsa_correlation_{s}.png", dpi=300, bbox_inches='tight')
         plt.close()
+
+    # rsa_results_all = np.array(rsa_results_all)
+    # np.save(rsa_save_path, rsa_results_all)
+
+
+def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
+                                                   model_rdm_folder,
+                                                   time_min,
+                                                   time_max,
+                                                   re_threshold,
+                                                   time_range=None,
+                                                   is_every=0,
+                                                   rsa_save_path=None,
+                                                   png_save_path=None,
+                                                   type="time",
+                                                   one_time=527, ):
+    """
+    批量计算 EEG 数据与模型 RDM 的相关性，并绘制显著性结果。
+
+    :param one_time:
+    :param type: eeg rdm是以什么维度计算出来的
+    :param png_save_path:
+    :param eeg_rdm_folder: str, EEG RDM 文件夹路径。
+    :param model_rdm_folder: str, 模型 RDM 文件夹路径。
+    :param time_min: float, 最小时间点。
+    :param time_max: float, 最大时间点。
+    :param re_threshold: float, 显著性检验阈值。
+    :param time_range: tuple, 需要计算相关性的时间范围 (start_time, end_time)，单位与time_min、time_max一致。
+    :param is_every: bool, 是否绘制每个被试的曲线。
+    :param rsa_save_path: str, 保存 RSA 结果的路径。
+    """
+
+    # 获取所有 EEG 和模型的被试编号
+    eeg_subjects = sorted(
+        {int(re.match(r"(\d+)_", d).group(1)) for d in os.listdir(eeg_rdm_folder)
+         if os.path.isdir(os.path.join(eeg_rdm_folder, d)) and re.match(r"(\d+)_", d)},
+        key=int
+    )
+    eeg_subjects_yuan = sorted(
+        [d for d in os.listdir(eeg_rdm_folder) if os.path.isdir(os.path.join(eeg_rdm_folder, d))])
+    model_subjects = sorted(
+        [int(d) for d in os.listdir(model_rdm_folder) if os.path.isdir(os.path.join(model_rdm_folder, d))])
+
+    print(eeg_subjects_yuan)
+    print(eeg_subjects)
+    print(model_subjects)
+
+    # 筛选出两者都存在的被试编号
+    common_subjects = list(set(eeg_subjects) & set(model_subjects))
+    if not common_subjects:
+        print("没有找到匹配的被试编号，请检查文件夹内容。")
+        return
+
+    print(f"找到 {len(common_subjects)} 个匹配的被试编号。")
+
+    # 初始化 RSA 结果矩阵
+    if type == "time":
+        # 初始化 RSA 结果矩阵
+        rsa_results_all = np.zeros((len(common_subjects), time_range[1] - time_range[0]))
+        time_dur = time_range[1] - time_range[0]
+
+        # 遍历被试
+        for i, sub in enumerate(common_subjects):
+            print(f"正在处理被试 {sub} ({i + 1}/{len(common_subjects)})")
+
+            # 加载 EEG RDM 和模型 RDM
+            eeg_rdm_path = os.path.join(eeg_rdm_folder, str(sub) + "_clean", 'rdm')
+            model_rdm_path = os.path.join(model_rdm_folder, str(sub), 'rdm', 'remove')
+
+            eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_clean_rdm.npy')][0]
+            model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('.npy')][0]
+
+            eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
+            model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
+
+            # 检查数据维度
+            if eeg_rdm.shape[1] != model_rdm.shape[0]:
+                raise ValueError(f"维度不匹配: EEG RDM {eeg_rdm.shape}, 模型 RDM {model_rdm.shape}")
+
+            # 初始化当前被试的 RSA 结果
+            rsa_results = np.zeros((time_range[1] - time_range[0],))
+
+            # 逐时间点计算相关性
+            for t in range(time_range[0], time_range[1]):
+                eeg_rdm_t = eeg_rdm[t, :]
+                model_rdm_z = zscore(model_rdm)
+                eeg_rdm_z = zscore(eeg_rdm_t)
+
+                spearman_corr, _ = spearmanr(model_rdm_z, eeg_rdm_z)
+                rsa_results[t - time_range[0]] = spearman_corr
+
+            rsa_results_all[i, :] = rsa_results
+    elif type == "channel" or type == "one_time":
+        # 初始化 RSA 结果矩阵
+        rsa_results_all = np.zeros((len(common_subjects), 98))
+
+        # 遍历被试
+        for i, sub in enumerate(common_subjects):
+            print(f"正在处理被试 {sub} ({i + 1}/{len(common_subjects)})")
+
+            # 加载 EEG RDM 和模型 RDM
+            eeg_rdm_path = os.path.join(eeg_rdm_folder, str(sub) + "_clean", 'rdm')
+            model_rdm_path = os.path.join(model_rdm_folder, str(sub), 'rdm', 'remove')
+
+            if type == "channel":
+                eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_by_channel_rdm.npy')][0]
+            elif type == "one_time":
+                eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f'_one_time_{one_time}' in f][0]
+                print(eeg_rdm_file)
+            model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('.npy')][0]
+
+            eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
+            model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
+
+            # 检查数据维度
+            if eeg_rdm.shape[1] != model_rdm.shape[0]:
+                raise ValueError(f"维度不匹配: EEG RDM {eeg_rdm.shape}, 模型 RDM {model_rdm.shape}")
+
+            # 初始化当前被试的 RSA 结果
+            rsa_results = np.zeros((98,))
+
+            # 逐时间点计算相关性
+            for c in range(98):
+                eeg_rdm_t = eeg_rdm[c, :]
+                model_rdm_z = zscore(model_rdm)
+                eeg_rdm_z = zscore(eeg_rdm_t)
+
+                spearman_corr, _ = spearmanr(model_rdm_z, eeg_rdm_z)
+                rsa_results[c] = spearman_corr
+
+            rsa_results_all[i, :] = rsa_results
+
+    # 保存 RSA 结果
+    if rsa_save_path is not None:
+        np.save(rsa_save_path, rsa_results_all)
+        print("RSA 结果已保存。")
+
+    # 时间点转换
+    if type == "time":
+        axis = np.linspace(time_min, time_max, num=time_dur)
+    elif type == "channel" or type == "one_time":
+        axis = np.arange(1, 99)
+
+    # 绘图
+    plt.figure(figsize=(8, 6))
+
+    # 绘制所有被试曲线
+    if is_every == 1:
+        for sub_data in rsa_results_all:
+            plt.plot(axis, sub_data, color='gray', alpha=0.3)
+
+    # 计算均值和标准误
+    mean_corr = np.mean(rsa_results_all, axis=0)
+    sem_corr = np.std(rsa_results_all, axis=0) / np.sqrt(len(common_subjects))
+
+    plt.plot(axis, mean_corr, color='red', label='Mean Correlation')
+    plt.fill_between(axis, mean_corr - sem_corr, mean_corr + sem_corr, color='red', alpha=0.3)
+
+    # 进行显著性检验
+    tail = 1 if re_threshold > 0 else -1
+    t_obs, clusters, cluster_pv, H0 = permutation_cluster_1samp_test(rsa_results_all,
+                                                                     threshold=re_threshold,
+                                                                     n_permutations=5000,
+                                                                     tail=tail)
+
+    significant_clusters = np.where(cluster_pv < 0.05)[0]
+
+    for i_clu in significant_clusters:
+        time_indices = clusters[i_clu][0]
+        sig_times = axis[time_indices]
+        plt.scatter(sig_times, np.full_like(sig_times, mean_corr.min()), color='blue', s=5)
+        print(f"显著性区域 {i_clu}: {sig_times.min():.3f} ms - {sig_times.max():.3f} ms, p = {cluster_pv[i_clu]:.5f}")
+
+    # 绘制辅助线
+    plt.axhline(0, color='black', linestyle='--', linewidth=1)
+    plt.axvline(x=0, color='black', linestyle='--', linewidth=1)
+
+    if type == "time":
+        plt.xlabel('Time (ms)')
+    elif type == "channel" or type == "one_time":
+        plt.xlabel('Channel')
+    plt.ylabel('Correlation Coefficient')
+    plt.title('Time-resolved RSA Correlation with Model RDM')
+    plt.legend(loc='upper right')
+    plt.grid(alpha=0.3)
+
+    # 保存图像
+    if png_save_path is not None:
+        plt.savefig(png_save_path, dpi=300)
+        print("相关性图像已保存。")
+    plt.show()
+    plt.close()
+
+
+def computer_eeg_rdm_remove(folder_path,
+                            save_base_path,
+                            fig_save_path=None,
+                            metric='correlation',
+                            save_time=200,
+                            is_number_label=False,
+                            type="time",
+                            one_time=527, ):
+    """
+    计算一个文件夹下所有 EEG 数据的 RDM，并保存结果。
+
+    :param one_time:
+    :param type: 根据什么维度计算rdm
+    :param folder_path: str, 包含 EEG 数据的 .npy 文件的文件夹路径。
+    :param save_base_path: str, 保存 RDM 结果的基础路径。
+    :param fig_save_path: str, 保存 RDM 图像的路径。若为 None，则不保存图像。
+    :param metric: str, 距离度量方法，默认为欧几里得距离。
+    :param save_time: int, 指定绘图的时间点。
+    :param is_number_label: bool, 是否在图像中显示数字标签。
+    """
+
+    # 获取所有 .npy 文件
+    npy_files = [f for f in os.listdir(folder_path) if f.endswith(".npy")]
+    if not npy_files:
+        print("未找到任何 .npy 文件，退出程序。")
+        return
+
+    # 遍历每个 .npy 文件
+    for npy_file in npy_files:
+        # 加载 EEG 数据
+        eeg_data = np.load(os.path.join(folder_path, npy_file), mmap_mode="r")
+        epoch_num, channel_num, time_num = eeg_data.shape
+        print(f"处理 {npy_file}，形状: {eeg_data.shape}")
+
+        # 创建存储路径
+        sub_save_path = os.path.join(save_base_path, os.path.splitext(npy_file)[0], "rdm")
+        os.makedirs(sub_save_path, exist_ok=True)
+        if fig_save_path:
+            sub_fig_path = os.path.join(fig_save_path, os.path.splitext(npy_file)[0], "rdm")
+            os.makedirs(sub_fig_path, exist_ok=True)
+
+        # 初始化 RDM 结果
+        if type == "time":
+            rdm_results = np.zeros((time_num, epoch_num * (epoch_num - 1) // 2))
+
+            for t in range(time_num):
+                print(f"  时间点: {t + 1}/{time_num}")
+                # 提取当前时间点的数据 (epoch × channel)
+                trial_features = eeg_data[:, :, t]  # (epoch, channel)
+
+                # 计算 RDM
+                rdm = pdist(trial_features, metric=metric)  # 计算所有 epoch 的 pairwise 距离
+                rdm_results[t] = rdm  # 存储到结果矩阵
+        elif type == "channel":
+            rdm_results = np.zeros((channel_num, epoch_num * (epoch_num - 1) // 2))
+
+            for c in range(channel_num):
+                print(f"  电极点: {c + 1}/{channel_num}")
+                # 提取当前时间点的数据 (epoch × time)
+                trial_features = eeg_data[:, c, :]  # (epoch, time)
+
+                # 计算 RDM
+                rdm = pdist(trial_features, metric=metric)  # 计算所有 epoch 的 pairwise 距离
+                rdm_results[c] = rdm  # 存储到结果矩阵
+        elif type == "one_time":
+            rdm_results = np.zeros((channel_num, epoch_num * (epoch_num - 1) // 2))
+
+            print(f"  时间点: {one_time}")
+            trial_features = eeg_data[:, :, one_time]
+
+            for c in range(channel_num):
+                print(f"  电极点: {c + 1}/{channel_num}")
+                # 提取当前时间点的数据 (epoch × time)
+                eeg_data_2 = trial_features[:, c]  # (epoch, time)
+                eeg_data_2 = eeg_data_2[:, np.newaxis]
+                # 计算 RDM
+                rdm = pdist(eeg_data_2, metric=metric)  # 计算所有 epoch 的 pairwise 距离
+                rdm_results[c] = rdm  # 存储到结果矩阵
+        else:
+            print("无此维度！")
+            return
+
+        # 保存 RDM 结果
+        if type == "time":
+            save_path = os.path.join(sub_save_path, f"{os.path.splitext(npy_file)[0]}_by_time_rdm.npy")
+        elif type == "channel":
+            save_path = os.path.join(sub_save_path, f"{os.path.splitext(npy_file)[0]}_by_channel_rdm.npy")
+        elif type == "one_time":
+            save_path = os.path.join(sub_save_path, f"{os.path.splitext(npy_file)[0]}_one_time_{one_time}_rdm.npy")
+        np.save(save_path, rdm_results)
+        print(f"已保存 RDM 到 {save_path}")
+
+    print("所有文件处理完成。")
+
+
+def plot_topomap_by_correlation(correlation_array_path,
+                                save_path=None, ):
+    epochs = mne.read_epochs("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/405_clean.fif")
+    data = np.load(correlation_array_path)
+    mean_data = np.mean(data, axis=0)
+
+    info = epochs.info
+    eeg_picks = mne.pick_types(info, eeg=True, eog=False, stim=False, misc=False)
+    eeg_ch_names = [info.ch_names[i] for i in eeg_picks]
+
+    for i in range(len(mean_data)):
+        print("channel: ", eeg_ch_names[i])
+        print("mean_data: ", mean_data[i])
+
+    plt.figure(figsize=(8, 6))
+    fig, ax = plt.subplots(layout="constrained")
+
+    mne.viz.plot_topomap(mean_data, info, ch_type='eeg', cmap='RdBu_r', names=eeg_ch_names, show=True, contours=0,
+                         axes=ax)
+
+    # sm = plt.cm.ScalarMappable(cmap="RdBu_r")
+    # sm.set_array(mean_data)
+    # plt.colorbar(sm, ax=ax, label='Correlation')
+
+    # fig.title("The distribution of average correlation values on the EEG scalp")
+    # fig.show()
+
+    fig.savefig(save_path, dpi=300)
+    print("图像已保存")
+
+
+def ridge_regression_eeg(hidden_data, eeg_data, train_ratio=0.8, n_splits=10, alpha=1.0, save_path=None):
+    """
+    使用 Ridge Regression 对 EEG 数据进行回归分析并预测，同时评估预测准确性。
+
+    参数:
+    - hidden_data: ndarray, (n_trials, n_hidden) 模型隐藏层数据
+    - eeg_data: ndarray, (n_trials, n_channels, n_times) EEG 数据
+    - train_ratio: float, 训练集比例
+    - n_splits: int, 数据划分的次数
+    - alpha: float, Ridge 正则化系数
+    - save_path: str, 保存结果的路径
+
+    返回:
+    - predicted_eeg: ndarray, (n_splits, n_test_trials, n_channels, n_times) 预测的 EEG 数据
+    - coefs: ndarray, (n_splits, n_channels, n_hidden) 回归系数
+    - mse_scores: ndarray, (n_splits, n_channels, n_times) 均方误差
+    - corr_scores: ndarray, (n_splits, n_channels, n_times) 相关系数
+    """
+    eeg_data = np.load(eeg_data)
+    hidden_data = np.load(hidden_data)
+    n_trials, n_channels, n_times = eeg_data.shape
+    n_hidden = hidden_data.shape[1]
+
+    all_predicted_eeg = []
+    test_all = []
+    coefs = np.zeros((n_splits, n_times, n_channels, n_hidden))
+
+    # 评估指标
+    mse_train_scores = np.zeros((n_splits, n_channels, n_times))
+    mse_test_scores = np.zeros((n_splits, n_channels, n_times))
+    corr_train_scores = np.zeros((n_splits, n_channels, n_times))
+    corr_test_scores = np.zeros((n_splits, n_channels, n_times))
+
+    for split in range(n_splits):
+        print(f"第 {split + 1}/{n_splits} 次数据划分和训练")
+
+        # 数据划分
+        train_idx, test_idx = train_test_split(np.arange(n_trials), train_size=train_ratio, random_state=split)
+        test_all.append(test_idx)
+        n_test_trials = len(test_idx)
+        predicted_eeg = np.zeros((n_test_trials, n_channels, n_times))
+
+        model = Ridge(alpha=alpha)
+
+        for t in range(n_times):
+            eeg_train = eeg_data[train_idx, :, t]
+            eeg_test = eeg_data[test_idx, :, t]
+
+            # Ridge 回归训练
+            model.fit(hidden_data[train_idx], eeg_train)
+            coefs[split, t, :, :] = model.coef_
+
+            # EEG 预测
+            predicted_eeg[:, :, t] = model.predict(hidden_data[test_idx])
+
+            # 训练集评估
+            eeg_train_pred = model.predict(hidden_data[train_idx])  # 训练集预测
+            mse_train_scores[split, :, t] = np.mean((eeg_train - eeg_train_pred) ** 2, axis=0)  # 训练集 MSE
+            for ch in range(n_channels):
+                corr_train_scores[split, ch, t], _ = pearsonr(eeg_train[:, ch], eeg_train_pred[:, ch])
+
+            # 测试集评估
+            mse_test_scores[split, :, t] = np.mean((eeg_test - predicted_eeg[:, :, t]) ** 2, axis=0)  # 测试集 MSE
+            for ch in range(n_channels):
+                corr_test_scores[split, ch, t], _ = spearmanr(eeg_test[:, ch], predicted_eeg[:, ch, t])
+
+        all_predicted_eeg.append(predicted_eeg)
+
+    print("回归和预测完成！")
+
+    # 相关性转换为百分比
+    corr_train_scores *= 100
+    corr_test_scores *= 100
+
+    print("训练集上的 MSE:", mse_train_scores.mean(axis=(0, 1, 2)))
+    print("测试集上的 MSE:", mse_test_scores.mean(axis=(0, 1, 2)))
+    print("训练集上的相关性 (%):", corr_train_scores.mean(axis=(0, 1, 2)))  # 百分比格式
+    print("测试集上的相关性 (%):", corr_test_scores.mean(axis=(0, 1, 2)))  # 百分比格式
+
+    # 保存结果
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+        np.save(os.path.join(save_path, "predicted_eeg.npy"), np.array(all_predicted_eeg))
+        np.save(os.path.join(save_path, "ridge_coefs.npy"), coefs)
+        print(f"结果已保存至 {save_path}")
+
+    return np.array(all_predicted_eeg), coefs, np.array(test_all)
 
 
 if __name__ == "__main__":
@@ -839,37 +1258,69 @@ if __name__ == "__main__":
     #                                               threshold=0.7)
     # print(significant_points)
     #
-    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_preprocessing_data_baseline_cp_remove.npy", mmap_mode="r")
+    """
+    计算eeg rdm
+    """
+    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_preprocessing_458_470_473_478.npy", mmap_mode="r")
     # computer_eeg_rdm(eeg_data=data,
-    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_cp_remove.npy",
+    #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_458_470_473_478.npy",
     #                  fig_save_path=None)
 
-    eeg_rdm = np.load("../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_cp_remove.npy", mmap_mode="r")
-    model_rdm = np.load("../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_remove.npy")
-    # model_rdm = model_rdm.T
-    # np.random.shuffle(model_rdm)
-    # model_rdm = model_rdm.T
-    print(eeg_rdm.shape)
-    print(model_rdm.shape)
+    # computer_eeg_rdm_remove(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/npy",
+    #                         save_base_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2_remove/",
+    #                         fig_save_path=None,
+    #                         metric="euclidean",
+    #                         type="one_time",
+    #                         one_time=527)
 
-    batch_compute_eeg_model_rdm_correlation(eeg_rdm=eeg_rdm,
-                                            model_rdm=model_rdm,
-                                            time_range=(100, 850),
-                                            time_min=-1,
-                                            time_max=0.5,
-                                            re_threhold=-2,
-                                            is_every=1,)
+    """
+    比较eeg和model的rdm
+    """
+    # eeg_rdm = np.load(
+    #     "../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2_remove/456_clean/rdm/456_clean_rdm.npy",
+    #     mmap_mode="r")
+    # model_rdm = np.load(
+    #     "../results/numpy/model/sub/hc/456/rdm/remove/rnn_layers_1_hidden_16_input_489_reverse_processed.npy")
+    # print(eeg_rdm.shape)
+    # print(model_rdm.shape)
 
-    # rdm1 = np.load("../results/numpy/eeg_rdm/hc/test/456.npy")
-    # rdm2 = np.load("../results/numpy/eeg_rdm/hc/test/457.npy")
-    #
-    # print(rdm1.shape)
-    # print(rdm2.shape)
-    #
-    # batch_compute_eeg_model_rdm_correlation(eeg_rdm=rdm1,
-    #                                         model_rdm=rdm2,
+    # batch_compute_eeg_model_rdm_correlation(eeg_rdm=eeg_rdm,
+    #                                         model_rdm=model_rdm,
     #                                         time_range=(100, 850),
     #                                         time_min=-1,
     #                                         time_max=0.5,
     #                                         re_threhold=2,
-    #                                         is_every=1,)
+    #                                         is_every=1,
+    #                                         rsa_save_path="../results/numpy/eeg_model/correlation/OB_first_rsa_result.npy")
+    # batch_compute_eeg_model_rdm_correlation_remove(
+    #     eeg_rdm_folder="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2_remove",
+    #     model_rdm_folder="../results/numpy/model/sub/hc/",
+    #     time_range=(100, 850),
+    #     time_min=-1,
+    #     time_max=0.5,
+    #     is_every=1,
+    #     re_threshold=2,
+    #     rsa_save_path="../results/numpy/eeg_model/correlation/rsa_results_one_time_527_cp_first.npy",
+    #     png_save_path="../results/png/eeg_model/correlation/rsa_results_one_time_527_cp_first.png",
+    #     type="one_time",
+    #     one_time=527, )
+
+    """
+    根据相关矩阵画出电极点图
+    """
+
+    # plot_topomap_by_correlation(
+    #     correlation_array_path="../results/numpy/eeg_model/correlation/rsa_results_by_channel_cp_first.npy",
+    #     save_path="../results/png/eeg_model/correlation/rsa_cp_first_topomap.png")
+
+    """
+    encoding base RSA
+    """
+    all_predicted_eeg, coefs, test_all = ridge_regression_eeg(
+        hidden_data="../hidden/sub/hc/405/remove/rnn_layers_1_hidden_16_input_489_combine_processed.npy",
+        eeg_data="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/npy/405_clean.npy",
+        n_splits=2)
+    print(all_predicted_eeg.shape)
+    print(coefs.shape)
+    print(test_all.shape)
+    print(test_all)

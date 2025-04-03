@@ -1054,7 +1054,8 @@ def get_trial_vars_from_pes_cannon(noise,
 def pairwise_distance_matrix(x,
                              saving_path,
                              is_number_label=False,
-                             save_matrix_path=None, ):
+                             save_matrix_path=None,
+                             metrix="correlation",):
     """
     绘制数据点之间的成对距离矩阵的热图。
 
@@ -1063,7 +1064,7 @@ def pairwise_distance_matrix(x,
     :param saving_path: 保存热图的路径，如果为 None，则不保存
     """
     # 计算成对欧几里得距离并转化为方阵形式
-    condensed_dist_matrix = pdist(x, metric='euclidean')
+    condensed_dist_matrix = pdist(x, metric=metrix)
     dissimilarity_matrix = squareform(condensed_dist_matrix)
 
     if save_matrix_path:
@@ -1099,7 +1100,8 @@ def pairwise_distance_matrix(x,
 def batch_pairwise_distance_matrix(hidden_path,
                                    saving_base_path,
                                    matrix_base_path,
-                                   is_number_label):
+                                   is_number_label,
+                                   is_remove, ):
     """
     先将模型按trials减去均值，再批量计算和保存 RDM。
 
@@ -1110,7 +1112,7 @@ def batch_pairwise_distance_matrix(hidden_path,
     """
     # 遍历主文件夹下的所有子文件夹
     for subdir, _, files in os.walk(hidden_path):
-        if "not_remove" in subdir:  # 筛选出包含 "remove" 的文件夹
+        if is_remove in subdir:  # 筛选出包含 "remove" 的文件夹
             pt_files = [f for f in files if f.endswith('.pt')]  # 筛选出 .pt 文件
             if not pt_files:
                 print(f"在文件夹 {subdir} 中未找到任何 .pt 文件，跳过该文件夹。")
@@ -1139,6 +1141,7 @@ def batch_pairwise_distance_matrix(hidden_path,
                     continue
 
                 # 构建保存路径
+                print(saving_base_path)
                 saving_path = os.path.join(
                     saving_base_path,
                     subfolder_name,
@@ -1164,6 +1167,62 @@ def batch_pairwise_distance_matrix(hidden_path,
                     is_number_label=is_number_label,
                     save_matrix_path=matrix_save_path
                 )
+
+    print("所有文件处理完成。")
+
+
+def batch_pairwise_distance_matrix_remove(hidden_path,
+                                          saving_base_path,
+                                          matrix_base_path,
+                                          is_number_label,
+                                          metrix="correlation",):
+    for subdir, _, files in os.walk(hidden_path):
+
+        npy_files = [f for f in files if f.endswith('.npy')]
+        if not npy_files:
+            print(f"在文件夹 {subdir} 中未找到任何 .npy 文件，跳过该文件夹。")
+            continue
+
+        # 从路径中提取子文件夹名
+        subfolder_name = os.path.basename(os.path.dirname(subdir))
+        if not subfolder_name:
+            print(f"无法获取 {subdir} 的子文件夹名，跳过。")
+            continue
+
+        for npy_file in npy_files:
+            npy_file_path = os.path.join(subdir, npy_file)
+
+            try:
+                hidden_states = np.load(npy_file_path)
+                print(f"{npy_file_path} 加载成功，数据形状: {hidden_states.shape}")
+            except Exception as e:
+                print(f"加载 {npy_file_path} 时出错: {e}")
+                continue
+
+            saving_path = os.path.join(
+                saving_base_path,
+                subfolder_name,
+                f"{npy_file.split('.npy')[0]}.png"
+            )
+            matrix_save_path = os.path.join(
+                matrix_base_path,
+                subfolder_name,
+                "rdm",
+                "remove",
+                f"{npy_file.split('.npy')[0]}.npy"
+            )
+
+            os.makedirs(os.path.dirname(saving_path), exist_ok=True)
+            os.makedirs(os.path.dirname(matrix_save_path), exist_ok=True)
+
+            print(f"正在处理 {npy_file_path}，保存到 {saving_path} 和 {matrix_save_path}...")
+            pairwise_distance_matrix(
+                hidden_states,
+                saving_path=saving_path,
+                is_number_label=is_number_label,
+                save_matrix_path=matrix_save_path,
+                metrix=metrix,
+            )
 
     print("所有文件处理完成。")
 
@@ -1219,6 +1278,90 @@ def merge_model_rdm_files(root_dir, save_path, keyword="combine"):
         print(f"合并完成，数据已保存到 {save_path}")
     except ValueError as e:
         print(f"数据形状不兼容，无法合并: {e}")
+
+
+def remove_epochs_from_model(eeg_folder, model_folder, key="combine"):
+    """
+    根据EEG数据中标记去除的epoch信息，删除模型隐藏层中对应的epoch，并保存到模型文件夹下的remove子文件夹。
+
+    :param eeg_folder: 存储epoch去除信息的文件夹，文件名格式如"123_bad_epochs.npy"
+    :param model_folder: 存储模型隐藏层的文件夹，文件名为bad_epochs文件的前缀名，内部存储.pt文件
+    :param key: 用于筛选模型文件名中的关键字，只有包含该关键字的模型文件会被处理
+    """
+    # 获取所有 EEG 的 bad_epochs 文件
+    eeg_files = {f.split('_')[0]: f for f in os.listdir(eeg_folder) if f.endswith("_bad_epochs.npy")}
+
+    if not eeg_files:
+        print("未找到任何 bad_epochs.npy 文件。")
+
+    # 遍历模型文件夹中的子文件夹
+    for folder_name in os.listdir(model_folder):
+        subfolder_path = os.path.join(model_folder, folder_name)
+        if not os.path.isdir(subfolder_path):
+            continue
+
+        # 查找模型文件夹下的 "not_remove" 子文件夹
+        not_remove_folder = os.path.join(subfolder_path, "not_remove")
+        if not os.path.isdir(not_remove_folder):
+            print(f"子文件夹 {folder_name} 中未找到 'not_remove' 文件夹，跳过。")
+            continue
+
+        # 查找符合条件的 .pt 文件
+        if key:
+            pt_files = [f for f in os.listdir(not_remove_folder) if f.endswith(".pt") and key in f]
+        else:
+            pt_files = [f for f in os.listdir(not_remove_folder) if f.endswith(".pt")]
+
+        if not pt_files:
+            print(f"子文件夹 {folder_name}/not_remove 中未找到符合条件的 .pt 文件，跳过。")
+            continue
+
+        # 确定输出路径
+        remove_folder = os.path.join(subfolder_path, 'remove')
+        os.makedirs(remove_folder, exist_ok=True)
+
+        # 检查是否有对应的 bad_epochs 文件
+        eeg_file = eeg_files.get(folder_name)
+        if eeg_file:
+            eeg_path = os.path.join(eeg_folder, eeg_file)
+            bad_epochs = np.load(eeg_path)
+            print(f"找到对应的 bad_epochs 文件：{eeg_file}")
+        else:
+            bad_epochs = None
+            print(f"未找到对应的 bad_epochs 文件，直接转换 .pt 为 .npy")
+
+        # 处理所有.pt文件
+        for pt_file in pt_files:
+            try:
+                model_path = os.path.join(not_remove_folder, pt_file)
+                print(model_path)
+                model_data = torch.load(model_path).numpy()
+
+                # 如果没有对应的 bad_epochs，则直接保存
+                if bad_epochs is None:
+                    output_path = os.path.join(remove_folder, f"{os.path.splitext(pt_file)[0]}_processed.npy")
+                    np.save(output_path, model_data)
+                    print(f"已直接转换 {pt_file} 为 .npy，保存至 {output_path}")
+                    continue
+
+                # 确保数据形状匹配
+                if len(bad_epochs) != model_data.shape[0]:
+                    print(f"数据不匹配：{eeg_file} 的长度为 {len(bad_epochs)}，"
+                          f"但模型数据 {pt_file} 的 shape 为 {model_data.shape}，跳过。")
+                    continue
+
+                # 删除对应的 epochs
+                clean_model_data = model_data[~bad_epochs]
+
+                # 保存清洗后的数据
+                output_path = os.path.join(remove_folder, f"{os.path.splitext(pt_file)[0]}_processed.npy")
+                np.save(output_path, clean_model_data)
+                print(f"{pt_file} 已处理，去除了 {np.sum(bad_epochs)} 个 epoch，保存至 {output_path}")
+
+            except Exception as e:
+                print(f"处理 {pt_file} 时出错：{e}")
+
+    print("所有文件处理完成。")
 
 
 if __name__ == "__main__":
@@ -1286,16 +1429,26 @@ if __name__ == "__main__":
     #                          is_number_label=False,
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
 
-    # # 批量产生不相似性矩阵
+    # 批量产生不相似性矩阵
     # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
     #                                saving_base_path=None,
     #                                matrix_base_path="../results/numpy/model/sub/hc",
-    #                                is_number_label=False)
+    #                                is_number_label=False,
+    #                                is_remove="remove")
+    batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/hc",
+                                          saving_base_path="../results/numpy/model/sub/hc",
+                                          matrix_base_path="../results/numpy/model/sub/hc",
+                                          is_number_label=False,)
+    # data = np.load("../results/numpy/model/sub/hc/457/rdm/remove/rnn_layers_1_hidden_16_input_489_reverse_processed.npy")
+    # print(data.shape)
 
-    merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
-                          save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_CP_frist_remove.npy",
-                          keyword="reverse")
+    # remove_epochs_from_model(eeg_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/",
+    #                          model_folder="../hidden/sub/hc",
+    #                          key="combine")
 
+    # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
+    #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_408_466_467_468.npy",
+    #                       keyword="combine")
 
     # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt").numpy()
     # print(hidden_states[0])
