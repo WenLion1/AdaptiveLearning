@@ -242,10 +242,10 @@ def batch_evaluate(data_folder_path,
 
 
 if __name__ == "__main__":
-    batch_evaluate(data_folder_path="../data/sub/hc",
+    batch_evaluate(data_folder_path="../data/sub/yuanwen_need",
                    model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
-                   results_folder_path="../results/csv/sub/hc",
-                   hidden_state_save_dir="../hidden/sub/hc",
+                   results_folder_path="../results/csv/sub/yuanwen_need",
+                   hidden_state_save_dir="../hidden/sub/yuanwen_need",
                    is_save_hidden_state=1,
                    num_layers=1,
                    model_type="rnn",

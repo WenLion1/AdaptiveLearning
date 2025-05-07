@@ -9,6 +9,8 @@ import os, torch
 import re
 import shutil
 
+import h5py
+import mne
 import numpy as np
 import pandas as pd
 import scipy.io
@@ -538,19 +540,161 @@ def update_is_changepoint_in_place(csv_file):
     print(f"文件 {csv_file} 处理完成。")
 
 
+def merge_data_files_per_subfolder(root_folder,
+                                   first_file_type='DataCP'):
+    """
+    遍历 root_folder 下的所有子文件夹，查找 DataCP 和 DataOddball 文件，
+    合并其内容（去掉第二个文件的第一行），并保存到当前子文件夹中。
+
+    参数：
+        root_folder (str): 根目录路径。
+        first_file_type (str): 'DataCP' 或 'DataOddball'，决定合并顺序。
+    """
+    assert first_file_type in ['DataCP', 'DataOddball'], "first_file_type must be 'DataCP' or 'DataOddball'"
+
+    for dirpath, dirnames, filenames in os.walk(root_folder):
+        cp_file = None
+        oddball_file = None
+
+        for fname in filenames:
+            if 'DataCP' in fname:
+                cp_file = os.path.join(dirpath, fname)
+            elif 'DataOddball' in fname:
+                oddball_file = os.path.join(dirpath, fname)
+
+        if cp_file and oddball_file:
+            with open(cp_file, 'r', encoding='utf-8') as f_cp, open(oddball_file, 'r', encoding='utf-8') as f_odd:
+                cp_lines = f_cp.readlines()
+                odd_lines = f_odd.readlines()
+
+                if first_file_type == 'DataCP':
+                    merged_lines = cp_lines + odd_lines[1:]  # 去掉 oddball 表头
+                    suffix = '_reverse'
+                else:
+                    merged_lines = odd_lines + cp_lines[1:]  # 去掉 cp 表头
+                    suffix = ''
+
+                subfolder_name = os.path.basename(dirpath.rstrip('/\\'))
+                save_filename = f"combine_{subfolder_name}{suffix}.csv"
+                save_path = os.path.join(dirpath, save_filename)
+
+                with open(save_path, 'w', encoding='utf-8') as f_out:
+                    f_out.writelines(merged_lines)
+
+                print(f"[已保存] {save_path}")
+
+
+def extract_bad_epochs(mat_folder,
+                       save_folder,
+                       total_trials=480):
+    """
+    在原文数据中提取bad_epochs数组
+
+    :param mat_folder:
+    :param save_folder:
+    :param total_trials:
+    :return:
+    """
+    os.makedirs(save_folder, exist_ok=True)
+
+    for filename in os.listdir(mat_folder):
+        if filename.endswith(".mat"):
+            mat_path = os.path.join(mat_folder, filename)
+
+            try:
+                with h5py.File(mat_path, 'r') as f:
+                    # epochNumbers 是个引用对象，需要转置并转换成1D numpy数组
+                    if 'epochNumbers' not in f:
+                        print(f"Warning: 'epochNumbers' not found in {filename}, skipping.")
+                        continue
+
+                    epoch_numbers = f['epochNumbers'][()]
+                    epoch_numbers = np.array(epoch_numbers).flatten().astype(int)
+                    epoch_numbers = epoch_numbers - 1  # MATLAB 索引从 1 开始，Python 从 0 开始
+
+                    bad_epochs = np.ones(total_trials, dtype=bool)
+                    bad_epochs[epoch_numbers] = False
+
+                    prefix = filename.split('_')[0]
+                    save_name = f"{prefix}_bad_epochs.npy"
+                    save_path = os.path.join(save_folder, save_name)
+
+                    np.save(save_path, bad_epochs)
+                    print(f"Saved: {save_path}")
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+
+
+def convert_mat_to_clean_npy(mat_folder, save_folder):
+    """
+    将MAT文件中的EEG数据读取并转换为形状为 (epoch, channel, time) 的 numpy 数组，并保存为 .npy 文件。
+
+    参数：
+        mat_folder: str，包含 .mat 文件的文件夹路径
+        save_folder: str，输出 .npy 文件保存路径
+    """
+    os.makedirs(save_folder, exist_ok=True)
+
+    for filename in os.listdir(mat_folder):
+        if filename.endswith(".mat"):
+            mat_path = os.path.join(mat_folder, filename)
+            try:
+                with h5py.File(mat_path, 'r') as f:
+                    # 读取 EEG.data 字段
+                    eeg_group = f['EEG']
+                    data_ref = eeg_group['data']
+                    data = np.array(data_ref)  # 原始形状: (epoch, time, channel)
+
+                    # 转为 (epoch, channel, time)
+                    data = np.transpose(data, (0, 2, 1))
+
+                    # 提取前缀数字作为保存文件名
+                    match = re.match(r"(\d+)_", filename)
+                    if match:
+                        file_id = match.group(1)
+                    else:
+                        file_id = os.path.splitext(filename)[0]
+
+                    save_path = os.path.join(save_folder, f"{file_id}_clean.npy")
+                    np.save(save_path, data)
+                    print(f"保存成功: {save_path}")
+
+            except Exception as e:
+                print(f"跳过文件 {filename}，因为读取失败: {e}")
+
+
 if __name__ == "__main__":
+    """
+    将被试行为mat文件转化为csv文件供模型测试
+    """
     # get_mat_csv_batch(file_path="C:/Learn/Project/bylw/cannonBehavData_forDryad",
     #                   key_names=[],
     #                   column_names=["distMean", "outcome", "pred", "oddBall"],
     #                   csv_save_path="../data/sub/yuanwen", )
-
+    #
     # add_rule(folder_path="../data/sub/yuanwen")
     #
     # change_oddball_to_isoddball(folder_name="../data/sub/yuanwen")
     #
     # classify_file_by_endwith_num(folder_path="../data/sub/yuanwen")
-
+    #
     # merge_csv_rows_in_folder("../data/sub/hc",
     #                          "../data/sub/hc/all_combine_sub.csv")
 
-    update_is_changepoint_in_place("../data/sub/hc/404/ADL_B_404_DataCP_404.csv")
+    # merge_data_files_per_subfolder(root_folder="../data/sub/yuanwen",
+    #                                first_file_type="DataOddball", )
+
+    # update_is_changepoint_in_place("../data/sub/hc/404/ADL_B_404_DataCP_404.csv")
+
+    """
+    在原文数据中提取bad_epochs数组
+    """
+    # extract_bad_epochs(mat_folder="C:/Learn/Project/bylw/数据/eeg-elife",
+    #                    save_folder="../data/eeg/yuanwen_need/bad_epochs",
+    #                    )
+
+    """
+    将eeg数据从mat中提取出来并保存
+    """
+    convert_mat_to_clean_npy(mat_folder="C:/Learn/Project/bylw/数据/eeg-elife",
+                             save_folder="../data/eeg/yuanwen_need/npy")

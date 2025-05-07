@@ -1429,28 +1429,24 @@ if __name__ == "__main__":
     #                          is_number_label=False,
     #                          save_matrix_path="../results/numpy/model/sub/hc/405/rdm/rnn_layers_1_hidden_16_input_489_CP_228.npy")
 
-    # 批量产生不相似性矩阵
+    """
+    批量产生不相似性矩阵
+    """
+
     # batch_pairwise_distance_matrix(hidden_path="../hidden/sub/hc",
     #                                saving_base_path=None,
     #                                matrix_base_path="../results/numpy/model/sub/hc",
     #                                is_number_label=False,
     #                                is_remove="remove")
-    batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/hc",
-                                          saving_base_path="../results/numpy/model/sub/hc",
-                                          matrix_base_path="../results/numpy/model/sub/hc",
+    batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/yuanwen_need",
+                                          saving_base_path="../results/numpy/model/sub/yuanwen_need",
+                                          matrix_base_path="../results/numpy/model/sub/yuanwen_need",
                                           is_number_label=False,)
-    # data = np.load("../results/numpy/model/sub/hc/457/rdm/remove/rnn_layers_1_hidden_16_input_489_reverse_processed.npy")
-    # print(data.shape)
 
-    # remove_epochs_from_model(eeg_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/",
-    #                          model_folder="../hidden/sub/hc",
+    # remove_epochs_from_model(eeg_folder="../data/eeg/yuanwen_need/bad_epochs",
+    #                          model_folder="../hidden/sub/yuanwen_need",
     #                          key="combine")
 
     # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
     #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_408_466_467_468.npy",
     #                       keyword="combine")
-
-    # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt").numpy()
-    # print(hidden_states[0])
-    # hidden_states = torch.load("../hidden/sub/hc/405/not_remove/rnn_layers_1_hidden_16_input_489_reverse.pt").numpy()
-    # print(hidden_states[240])
