@@ -531,6 +531,83 @@ def autoreject_fif_files(input_folder):
                 print(f"处理文件 {file_name} 时出错: {e}")
 
 
+def process_and_plot_erp(fif_folder, save_path, baseline=(None, 0), is_baseline=0, ):
+    """
+    遍历 fif_folder 中所有 .fif 文件，进行基线矫正、绘制 ERP 图，并保存到 save_path 下对应子文件夹中。
+
+    :param fif_folder: 包含 .fif 文件的文件夹路径
+    :param save_path: 根目录路径，图像将保存到 save_path/{subject_id}/ERP/all_baseline.png
+    :param baseline: tuple，(start, end)，单位为秒，表示基线时间范围，例如 (-0.2, 0)
+    """
+    fif_files = [f for f in os.listdir(fif_folder) if f.endswith('.fif')]
+
+    for fif_file in fif_files:
+        fif_path = os.path.join(fif_folder, fif_file)
+
+        # 提取 subject_id
+        match = re.match(r"(\d+)_", fif_file)
+        if not match:
+            print(f"跳过无效文件名：{fif_file}")
+            continue
+        subject_id = match.group(1)
+
+        try:
+            # 读取 epochs 文件
+            epochs = mne.read_epochs(fif_path, preload=True, verbose='ERROR')
+
+            if is_baseline == 1:
+                # 基线矫正
+                epochs.apply_baseline(baseline)
+
+            # 计算平均 evoked
+            evoked = epochs.average()
+
+            # 绘图
+            fig = evoked.plot(show=False, spatial_colors=True, titles=f"Subject {subject_id} ERP", time_unit='s')
+
+            # 构建保存路径
+            subject_dir = os.path.join(save_path, subject_id, "ERP")
+            os.makedirs(subject_dir, exist_ok=True)
+            fig_path = os.path.join(subject_dir, "all_baseline.png")
+
+            fig.savefig(fig_path)
+            plt.close(fig)
+            print(f"已保存 ERP 图：{fig_path}")
+        except Exception as e:
+            print(f"处理文件出错：{fif_file}，错误信息：{e}")
+
+
+def apply_baseline_to_fif_folder(folder_path, baseline=(0, 0.2)):
+    """
+    对文件夹内所有 .fif 文件执行 baseline 矫正，并将结果保存为 *_baseline.fif 文件。
+
+    :param folder_path: 包含 .fif 文件的文件夹路径
+    :param baseline: tuple，(start, end)，单位为秒，例如 (-0.2, 0)
+    """
+    fif_files = [f for f in os.listdir(folder_path) if f.endswith('.fif')]
+
+    for fif_file in fif_files:
+        file_path = os.path.join(folder_path, fif_file)
+
+        try:
+            # 读取 epochs
+            epochs = mne.read_epochs(file_path, preload=True, verbose='ERROR')
+
+            # 应用 baseline
+            epochs.apply_baseline(baseline)
+
+            # 构建新文件名
+            base_name = fif_file.replace('.fif', '_baseline.fif')
+            save_path = os.path.join(folder_path, base_name)
+
+            # 保存矫正后的 epochs
+            epochs.save(save_path, overwrite=True)
+            print(f"保存成功：{save_path}")
+
+        except Exception as e:
+            print(f"处理失败：{fif_file}，错误信息：{e}")
+
+
 if __name__ == "__main__":
     """
     批量预处理
@@ -557,7 +634,7 @@ if __name__ == "__main__":
     # autoreject_fif_files("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2")
 
     """
-    做ERP
+    做ERP(E6, E62)
     """
     # # 设置数据文件夹路径
     # data_folder = "../data/eeg/hc/2base_0_1.5_baseline(1)_-0.5_0_ob"  # 修改为你的实际路径
@@ -610,11 +687,25 @@ if __name__ == "__main__":
     # evoke.plot_joint()
 
     """
+    批量ERP
+    """
+    # process_and_plot_erp(fif_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/cp",
+    #                      save_path="../results/png/sub/hc",
+    #                      baseline=(0, 0.2),
+    #                      is_baseline=1, )
+
+    """
     将eeg的fif转化为numpy
     """
-    get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject",
-                       is_baseline=True,
-                       baseline_range=(0, 0.2))
+    # get_numpy_from_fif(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/ob",
+    #                    is_baseline=True,
+    #                    baseline_range=(0, 0.2))
 
     # data = np.load("../data/eeg/hc/2base_-1.5_0.5_nobaseline/eeg_preprocessing_data.npy")
     # print(data.shape)
+
+    """
+    给fif做baseline
+    """
+    apply_baseline_to_fif_folder(folder_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/cp",
+                                 baseline=(0, 0.2))

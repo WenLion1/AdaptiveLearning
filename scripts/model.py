@@ -186,7 +186,7 @@ class perceptual_network_vm(nn.Module):
         self.model_name = model_name
         self.device = device
         self.sigma = sigma
-        self.kappa = 1 / self.sigma**2
+        self.kappa = 1 / self.sigma ** 2
 
         self.network = model_type(model_name=self.model_name,
                                   input_size=self.input_size,
@@ -217,6 +217,32 @@ class perceptual_network_vm(nn.Module):
 
         outcome_pre = self.fc(out)
         return outcome_pre, out
+
+
+class EEGClassifier(nn.Module):
+    def __init__(self, input_size, hidden_size=256, num_classes=4):
+        super(EEGClassifier, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.4),
+
+            nn.Linear(hidden_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.4),
+
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.BatchNorm1d(hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+
+            nn.Linear(hidden_size // 2, num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
 
 
 if __name__ == "__main__":

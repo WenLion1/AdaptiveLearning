@@ -1,0 +1,14 @@
+file,subject_id,csv_file,accuracy
+405_clean.npy,405,combine_405_outcome_label_remove.csv,0.30434782608695654
+407_clean.npy,407,combine_407_outcome_label_remove.csv,0.3595505617977528
+408_clean.npy,408,combine_408_outcome_label_remove.csv,0.34375
+451_clean.npy,451,combine_451_outcome_label_remove.csv,0.3645833333333333
+452_clean.npy,452,combine_452_outcome_label_remove.csv,0.3541666666666667
+453_clean.npy,453,combine_453_outcome_label_remove.csv,0.28421052631578947
+454_clean.npy,454,combine_454_outcome_label_remove.csv,0.2708333333333333
+455_clean.npy,455,combine_455_outcome_label_remove.csv,0.3829787234042553
+463_clean.npy,463,combine_463_outcome_label_remove.csv,0.3229166666666667
+464_clean.npy,464,combine_464_outcome_label_remove.csv,0.28125
+466_clean.npy,466,combine_466_outcome_label_remove.csv,0.34782608695652173
+467_clean.npy,467,combine_467_outcome_label_remove.csv,0.3684210526315789
+468_clean.npy,468,combine_468_outcome_label_remove.csv,0.35789473684210527

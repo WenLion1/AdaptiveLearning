@@ -663,6 +663,126 @@ def convert_mat_to_clean_npy(mat_folder, save_folder):
                 print(f"跳过文件 {filename}，因为读取失败: {e}")
 
 
+def generate_outcome_label(csv_path):
+    """
+    根据csv文件建立outcome label
+
+    :param csv_path:
+    :return:
+    """
+    # 读取原始CSV
+    df = pd.read_csv(csv_path)
+
+    if 'outcome' not in df.columns:
+        raise ValueError("CSV 文件中必须包含 'outcome' 列。")
+
+    outcomes = df['outcome'].tolist()
+    labels = []
+
+    for i in range(len(outcomes)):
+        if i == 0:
+            labels.append(0)  # 第一行没有上一行，设为0或你想要的默认值
+            continue
+
+        prev = outcomes[i - 1]
+
+        # 将负角度转换为 [0, 360)
+        if prev < 0:
+            prev = 360 + (prev % 360)
+
+        prev = prev % 360  # 保证在 [0, 360)
+
+        if 0 <= prev < 90:
+            labels.append(1)
+        elif 90 <= prev < 180:
+            labels.append(2)
+        elif 180 <= prev < 270:
+            labels.append(3)
+        elif 270 <= prev < 360:
+            labels.append(4)
+        else:
+            labels.append(0)  # 异常情况处理
+
+    # 创建新 DataFrame 并保存
+    label_df = pd.DataFrame({'label': labels})
+    base, ext = os.path.splitext(csv_path)
+    output_path = f"{base}_outcome_label{ext}"
+    label_df.to_csv(output_path, index=False)
+    print(f"已保存新文件：{output_path}")
+
+
+def process_folder_for_key(base_folder,
+                           key="combine"):
+    """
+    遍历给定文件夹下所有子文件夹，查找包含关键字key的CSV文件并生成outcome label
+
+    :param base_folder: 主文件夹路径
+    :param key: 要匹配的CSV文件名关键字
+    """
+    for root, dirs, files in os.walk(base_folder):
+        for file in files:
+            if key in file and file.endswith(".csv"):
+                csv_path = os.path.join(root, file)
+                print(f"找到匹配文件：{csv_path}")
+                generate_outcome_label(csv_path)
+
+
+def remove_rows_by_npy(source_npy_folder,
+                       target_csv_folder,
+                       key="outcome_label"):
+    """
+    遍历 source_npy_folder 中的所有 .npy 文件，根据每个 .npy 文件中记录的布尔数组，
+    在 target_csv_folder 中找到对应子文件夹下带有 key 的 csv 文件，并删除第一行及布尔值为 True 的行，
+    最后保存为原 csv 文件名加 "_remove" 后缀的新文件。
+    """
+    for npy_file in os.listdir(source_npy_folder):
+        if not npy_file.endswith(".npy"):
+            continue
+
+        # 解析数字 ID
+        number = npy_file.split("_")[0]
+        npy_path = os.path.join(source_npy_folder, npy_file)
+
+        # 读取 .npy 文件（布尔数组）
+        mask = np.load(npy_path)
+        if not isinstance(mask, np.ndarray) or mask.dtype != bool:
+            print(f"跳过 {npy_file}，不是布尔类型数组。")
+            continue
+
+        # 找到对应子文件夹
+        subfolder = os.path.join(target_csv_folder, number)
+        if not os.path.isdir(subfolder):
+            print(f"未找到子文件夹：{subfolder}")
+            continue
+
+        # 找到带 key 的 csv 文件
+        csv_files = [f for f in os.listdir(subfolder) if key in f and f.endswith(".csv")]
+        if not csv_files:
+            print(f"{subfolder} 中未找到包含关键字 '{key}' 的 CSV 文件。")
+            continue
+        csv_file = csv_files[0]  # 只取第一个匹配的
+
+        csv_path = os.path.join(subfolder, csv_file)
+        df = pd.read_csv(csv_path)
+
+        if len(df) != len(mask):
+            print(f"{csv_file} 行数与 {npy_file} 不匹配，跳过。")
+            continue
+
+        # 构建新掩码：删除第一行 + mask 为 True 的行
+        new_mask = mask.copy()
+        # new_mask[0] = True  # 删除第一行
+
+        # 删除 new_mask 为 True 的行
+        df_filtered = df[~new_mask].reset_index(drop=True)
+
+        # 保存为新文件
+        new_csv_name = csv_file.replace(".csv", "_remove.csv")
+        new_csv_path = os.path.join(subfolder, new_csv_name)
+        df_filtered.to_csv(new_csv_path, index=False)
+        print(f"保存过滤后的文件到：{new_csv_path}")
+
+
 if __name__ == "__main__":
     """
     将被试行为mat文件转化为csv文件供模型测试
@@ -690,11 +810,28 @@ if __name__ == "__main__":
     在原文数据中提取bad_epochs数组
     """
     # extract_bad_epochs(mat_folder="C:/Learn/Project/bylw/数据/eeg-elife",
-    #                    save_folder="../data/eeg/yuanwen_need/bad_epochs",
+    #                    save_folder="../data/eeg/yuanwen/bad_epochs",
     #                    )
 
     """
     将eeg数据从mat中提取出来并保存
     """
-    convert_mat_to_clean_npy(mat_folder="C:/Learn/Project/bylw/数据/eeg-elife",
-                             save_folder="../data/eeg/yuanwen_need/npy")
+    # convert_mat_to_clean_npy(mat_folder="C:/Learn/Project/bylw/数据/eeg-elife",
+    #                          save_folder="../data/eeg/yuanwen/npy")
+
+    """
+    根据csv文件建立outcome label
+    """
+    # # 单个文件
+    # generate_outcome_label("../data/240_rule/df_test_combine_480.csv")
+
+    # 批量处理
+    # process_folder_for_key(base_folder="../data/sub/hc/cp",
+    #                        key="reverse")
+
+    """
+    删除outcome label里的坏epoch
+    """
+    remove_rows_by_npy(source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/cp",
+                       target_csv_folder="../data/sub/hc/cp",
+                       key="outcome_label")

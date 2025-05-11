@@ -164,12 +164,107 @@ def plot_erp_from_folder(folder_path, sampling_rate=500, time_window=None, basel
     plt.show()
 
 
+def save_false_npy(file_path):
+    """
+    保存一个 shape 为 (480,) 且所有值为 False 的 .npy 文件。
+
+    参数：
+    - file_path (str): 保存的完整路径（包含文件名和 .npy 后缀）
+    """
+    data = np.zeros(480, dtype=bool)  # 生成全部为 False 的布尔数组
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)  # 自动创建目录（如不存在）
+    np.save(file_path, data)
+    print(f"已保存 False 数组到：{file_path}")
+
+
+def merge_npy_files_in_folder(folder_path):
+    """
+    合并文件夹中所有 .npy 文件（每个文件去掉第一个样本），按 axis=0 合并，
+    并保存为 merged.npy 到该文件夹下。
+
+    :param folder_path: 包含多个 .npy 文件的文件夹路径
+    """
+    npy_files = sorted([
+        f for f in os.listdir(folder_path)
+        if f.endswith('.npy')
+    ])
+
+    if not npy_files:
+        raise ValueError("该文件夹中没有 .npy 文件")
+
+    # 加载所有数据并合并（每个文件去掉第一个样本）
+    data_list = []
+    for fname in npy_files:
+        full_path = os.path.join(folder_path, fname)
+        arr = np.load(full_path)
+
+        if arr.shape[0] < 2:
+            raise ValueError(f"{fname} 样本数量不足，无法去掉第一个样本")
+
+        data_list.append(arr[1:])  # 去掉第一个样本
+
+    merged = np.concatenate(data_list, axis=0)
+    save_path = os.path.join(folder_path, "merged.npy")
+    np.save(save_path, merged)
+    print(f"合并完成，保存路径: {save_path}")
+
+
+def merge_csvs_from_subfolders(folder_path, key, save_csv_path):
+    """
+    遍历主文件夹下的所有子文件夹，读取其中包含指定关键词 key 的 CSV 文件，
+    去掉每个 CSV 的前两行，按顺序合并并保存为一个新 CSV 文件。
+
+    :param folder_path: 主文件夹路径，里面包含多个子文件夹
+    :param key: 筛选 CSV 文件名中包含的关键词
+    :param save_csv_path: 合并后的 CSV 要保存的完整路径（包含文件名）
+    """
+    merged_dfs = []
+
+    for subfolder in sorted(os.listdir(folder_path)):
+        subfolder_path = os.path.join(folder_path, subfolder)
+        if os.path.isdir(subfolder_path):
+            for file in os.listdir(subfolder_path):
+                if file.endswith('.csv') and key in file:
+                    csv_path = os.path.join(subfolder_path, file)
+                    df = pd.read_csv(csv_path, skiprows=2, header=None)  # 跳过前两行
+                    merged_dfs.append(df)
+
+    if not merged_dfs:
+        raise ValueError(f"在 {folder_path} 的子文件夹中找不到包含关键字 '{key}' 的 CSV 文件")
+
+    merged_df = pd.concat(merged_dfs, ignore_index=True)
+    merged_df.to_csv(save_csv_path, index=False, header=False)
+    print(f"CSV 合并完成，保存至: {save_csv_path}")
+
+
+def add_label_header(csv_path):
+    """
+    给一个只有一列的 CSV 文件添加表头 'label'。
+
+    :param csv_path: 目标 CSV 文件路径
+    """
+    df = pd.read_csv(csv_path, header=None)
+    df.columns = ['label']
+    df.to_csv(csv_path, index=False)
+    print(f"已为 {csv_path} 添加表头 'label'")
+
+
 if __name__ == "__main__":
     # eeg_data = read_eeg_data_from_mat(
     #     "C:/Learn/Project/bylw/数据/eeg-elife/203_Cannon_FILT_altLow_STIM.mat/203_Cannon_FILT_altLow_STIM.mat")
     # print(eeg_data.shape)
 
-    plot_erp_from_folder(folder_path="C:/Learn/Project/bylw/数据/eeg-elife",
-                         is_baseline=1,
-                         baseline_window=(0, 100),
-                         time_window=(0.5, 2))
+    # plot_erp_from_folder(folder_path="C:/Learn/Project/bylw/数据/eeg-elife",
+    #                      is_baseline=1,
+    #                      baseline_window=(0, 100),
+    #                      time_window=(0.5, 2))
+
+    # save_false_npy("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/cp/470_bad_epochs.npy")
+
+    # merge_npy_files_in_folder("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob")
+    # data = np.load("../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/merged.npy")
+    # print(data.shape)
+    # merge_csvs_from_subfolders(folder_path="../data/sub/hc/ob",
+    #                            key="outcome_label_remove",
+    #                            save_csv_path="../data/sub/hc/ob/merged.csv")
+    add_label_header("../data/sub/hc/ob/merged.csv")

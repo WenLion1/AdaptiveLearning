@@ -18,6 +18,8 @@ from sklearn.preprocessing import StandardScaler
 from mne.stats import permutation_cluster_test, permutation_cluster_1samp_test
 from twisted.python.util import println
 
+from scripts.analysis import decode_hidden_eeg
+
 
 def compute_and_plot_dissimilarity_matrices(eeg_data,
                                             save_path,
@@ -801,10 +803,12 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
                                                    png_save_path=None,
                                                    type="time",
                                                    one_time=527,
-                                                   montage_type=98):
+                                                   montage_type=98,
+                                                   model_type="combine", ):
     """
     批量计算 EEG 数据与模型 RDM 的相关性，并绘制显著性结果。
 
+    :param model_type:
     :param montage_type:
     :param epoch_data_path:
     :param one_time:
@@ -837,6 +841,7 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
 
     # 筛选出两者都存在的被试编号
     common_subjects = list(set(eeg_subjects) & set(model_subjects))
+    print(common_subjects)
     if not common_subjects:
         print("没有找到匹配的被试编号，请检查文件夹内容。")
         return
@@ -858,7 +863,10 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
             model_rdm_path = os.path.join(model_rdm_folder, str(sub), 'rdm', 'remove')
 
             eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_by_time_rdm.npy')][0]
-            model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('.npy')][0]
+            if model_type == "combine":
+                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('combine_processed.npy')][0]
+            elif model_type == "reverse":
+                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('reverse_processed.npy')][0]
 
             eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
             model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
@@ -874,6 +882,16 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
             for t in range(time_range[0], time_range[1]):
                 eeg_rdm_t = eeg_rdm[t, :]
                 model_rdm_z = zscore(model_rdm)
+
+                # z_min = np.min(model_rdm_z)
+                # z_max = np.max(model_rdm_z)
+                # model_rdm_z = np.random.uniform(z_min, z_max, size=model_rdm_z.shape)
+
+                # model_rdm_z = np.random.permutation(model_rdm_z)
+
+                # model_rdm_z = np.full_like(model_rdm_z, z_max)
+                # print(model_rdm_z)
+
                 eeg_rdm_z = zscore(eeg_rdm_t)
                 # # !!!!!!!!!!!!!!!!!!!!
                 # eeg_rdm_z = np.random.permutation(eeg_rdm_z)
@@ -899,7 +917,11 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
             elif type == "one_time":
                 eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f'_one_time_{one_time}' in f][0]
                 print(eeg_rdm_file)
-            model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('.npy')][0]
+
+            if model_type == "combine":
+                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('combine_processed.npy')][0]
+            elif model_type == "reverse":
+                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('reverse_processed.npy')][0]
 
             eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
             model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
@@ -980,7 +1002,7 @@ def plot_permutation_test(rsa_result_path,
         axis = np.linspace(time_min, time_max, num=time_dur)
         rsa_results_all = rsa_result
     elif type == "channel" or type == "one_time":
-        axis = np.arange(1, montage_type+1)
+        axis = np.arange(1, montage_type + 1)
         rsa_results_all = rsa_result
     elif type == "combine":
         axis = np.linspace(time_min, time_max, num=time_dur)
@@ -1169,7 +1191,7 @@ def plot_topomap_by_correlation(correlation_array_path,
                                 save_path=None,
                                 vmin=None,
                                 vmax=None,
-                                montage_type=98,):
+                                montage_type=98, ):
     """
     根据相关值画脑部图
     :param montage_type:
@@ -1690,6 +1712,126 @@ def encoding_base_rsa(eeg_data_folder,
                                      n_permutations=n_permutation, )
 
 
+def batch_decode_hidden_eeg(hidden_eeg_path_folder,
+                            csv_path_folder,
+                            output_csv_path="decode_results.csv",
+                            key="outcome_label_remove",
+                            type="sub",
+                            time_range=(100, 852),
+                            is_random=0, ):
+    """
+    批量运行 decode_hidden_eeg 并记录每个文件的准确率。
+
+    :param is_random:
+    :param hidden_eeg_path_folder: .npy 或 .pt 文件所在的文件夹
+    :param csv_path_folder: 包含被试子文件夹，每个子文件夹包含多个 CSV 文件
+    :param output_csv_path: 输出保存准确率结果的 CSV 文件路径
+    :param key: 用于匹配 CSV 文件名的关键词（如 "trials"）
+    :param type: "sub" 或 "model"
+    :param time_range: 适用于 "sub" 类型的时间范围
+    """
+    results = []
+
+    for file_name in os.listdir(hidden_eeg_path_folder):
+        if not file_name.endswith(('.npy', '.pt')):
+            continue
+
+        # 提取 ID（假设文件名是 123_xxx.npy）
+        match = re.match(r"(\d+)_", file_name)
+        if not match:
+            print(f"文件名不符合格式：{file_name}")
+            continue
+        subject_id = match.group(1)
+
+        # 定位 CSV 文件
+        subject_folder = os.path.join(csv_path_folder, subject_id)
+        if not os.path.isdir(subject_folder):
+            print(f"未找到对应的子文件夹：{subject_id}")
+            continue
+
+        csv_files = [f for f in os.listdir(subject_folder) if key in f and f.endswith('.csv')]
+        if not csv_files:
+            print(f"未找到包含关键词 '{key}' 的 CSV 文件：{subject_folder}")
+            continue
+        csv_path = os.path.join(subject_folder, csv_files[0])
+
+        # 构建特征路径
+        hidden_eeg_path = os.path.join(hidden_eeg_path_folder, file_name)
+
+        # 捕获输出准确率
+        try:
+            # 重写 decode_hidden_eeg 函数来返回准确率
+            acc = decode_hidden_eeg(
+                hidden_eeg_path, csv_path, time_range=time_range, type=type, is_random=is_random,
+            )
+            results.append({
+                "file": file_name,
+                "subject_id": subject_id,
+                "csv_file": os.path.basename(csv_path),
+                "accuracy": acc
+            })
+        except Exception as e:
+            print(f"处理文件出错：{file_name}, 错误：{e}")
+            results.append({
+                "file": file_name,
+                "subject_id": subject_id,
+                "csv_file": "N/A",
+                "accuracy": "error"
+            })
+
+    # 保存结果
+    df_result = pd.DataFrame(results)
+    df_result.to_csv(output_csv_path, index=False)
+    print(f"批量解码完成，结果已保存至 {output_csv_path}")
+
+
+def plot_accuracy_from_csvs(csv_paths, png_save_path, title="Accuracy Comparison"):
+    """
+    从多个 CSV 文件中读取 accuracy 和 subject_id 列，画出折线图并保存，横坐标显示实际 subject_id。
+
+    :param csv_paths: 一个或多个 CSV 文件路径（列表或元组）
+    :param png_save_path: 保存的 PNG 文件路径
+    :param title: 图表标题
+    """
+    if isinstance(csv_paths, str):
+        csv_paths = [csv_paths]
+
+    plt.figure(figsize=(12, 6))
+
+    all_subject_ids = set()
+
+    for csv_path in csv_paths:
+        df = pd.read_csv(csv_path)
+
+        if 'subject_id' not in df.columns or 'accuracy' not in df.columns:
+            print(f"跳过 {csv_path}，缺少 'subject_id' 或 'accuracy' 列")
+            continue
+
+        # 确保 accuracy 为 float，subject_id 为 str
+        df['accuracy'] = pd.to_numeric(df['accuracy'], errors='coerce')
+        df['subject_id'] = df['subject_id'].astype(str)
+        df_sorted = df.sort_values(by='subject_id')
+
+        all_subject_ids.update(df_sorted['subject_id'])
+
+        label = csv_path.split("/")[-1].replace(".csv", "")
+        plt.plot(df_sorted['subject_id'], df_sorted['accuracy'], marker='o', label=label)
+
+    # 设置横坐标标签为所有 subject_id，按顺序排列
+    subject_id_list = sorted(all_subject_ids, key=lambda x: int(x) if x.isdigit() else x)
+    plt.xticks(ticks=range(len(subject_id_list)), labels=subject_id_list, rotation=45)
+
+    plt.xlabel("Subject ID")
+    plt.ylabel("Accuracy")
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(png_save_path)
+    plt.close()
+    print(f"图已保存到 {png_save_path}")
+
+
 if __name__ == "__main__":
     """
     计算eeg rdm
@@ -1699,10 +1841,10 @@ if __name__ == "__main__":
     #                  save_path="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2/eeg_rdm_458_470_473_478.npy",
     #                  fig_save_path=None)
 
-    # computer_eeg_rdm_remove(folder_path="../data/eeg/yuanwen_need/npy",
-    #                         save_base_path="../results/numpy/eeg_rdm/yuanwen_need",
+    # computer_eeg_rdm_remove(folder_path="../data/eeg/yuanwen/npy",
+    #                         save_base_path="../results/numpy/eeg_rdm/yuanwen",
     #                         fig_save_path=None,
-    #                         time_range=(650, 750),
+    #                         time_range=(650, 750),  # channel (650, 750), time (250, 1000)
     #                         metric="correlation",
     #                         type="channel",
     #                         one_time=527)
@@ -1729,19 +1871,20 @@ if __name__ == "__main__":
     #                                         is_every=1,
     #                                         rsa_save_path="../results/numpy/eeg_model/correlation/OB_first_rsa_result.npy")
     # batch_compute_eeg_model_rdm_correlation_remove(
-    #     eeg_rdm_folder="../results/numpy/eeg_rdm/yuanwen_need/",
+    #     eeg_rdm_folder="../results/numpy/eeg_rdm/yuanwen/",
     #     epoch_data_path=None,
-    #     model_rdm_folder="../results/numpy/model/sub/yuanwen_need/",
-    #     time_range=(400, 500),
+    #     model_rdm_folder="../results/numpy/model/sub/yuanwen/",
+    #     time_range=(0, 750),
     #     time_min=-1,
     #     time_max=0.5,
     #     is_every=1,
     #     re_threshold=2,
-    #     rsa_save_path="../results/numpy/eeg_model/correlation/yuanwen_need/rsa_results_by_channel_unknow_first.npy",
-    #     png_save_path="../results/png/eeg_model/correlation/yuanwen_need/rsa_results_by_channel_unknow_first.png",
+    #     rsa_save_path="../results/numpy/eeg_model/correlation/yuanwen/rsa_results_by_channel_unknow_OB_first_0.08.npy",
+    #     png_save_path="../results/png/eeg_model/correlation/yuanwen/rsa_results_unknow_OB_first_comtap_0.08.npy",
     #     type="channel",
     #     one_time=527,
-    #     montage_type=64,)
+    #     montage_type=64,
+    #     model_type="combine",)
     # plot_permutation_test(rsa_result_path="../results/numpy/eeg_model/correlation/hc/rsa_results_ob_first.npy",
     #                       rsa_result2_path="../results/numpy/eeg_model/correlation/hc/rsa_results_cp_first.npy",
     #                       time_min=-1,
@@ -1756,10 +1899,12 @@ if __name__ == "__main__":
     根据相关矩阵画出电极点图
     """
 
-    plot_topomap_by_correlation(
-        correlation_array_path="../results/numpy/eeg_model/correlation/yuanwen_need/rsa_results_by_channel_unknow_first.npy",
-        save_path="../results/png/eeg_model/correlation/yuanwen_need/rsa_results_unknow_first.png",
-        montage_type=64,)
+    # plot_topomap_by_correlation(
+    #     correlation_array_path="../results/numpy/eeg_model/correlation/yuanwen/rsa_results_by_channel_unknow_OB_first.npy",
+    #     save_path="../results/png/eeg_model/correlation/yuanwen/rsa_results_unknow_OB_first_comtap_0.015.png",
+    #     montage_type=64,
+    #     vmin=-0.015,
+    #     vmax=0.015,)
 
     """
     encoding base RSA
@@ -1772,3 +1917,27 @@ if __name__ == "__main__":
     #                   png_save_name="test.png",
     #                   type="ridge_regression",
     #                   epoch_data_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/408.fif")
+
+    """
+    根据eeg解码四个方向
+    """
+    decode_hidden_eeg(
+        hidden_eeg_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/merged.npy",
+        csv_path="../data/sub/hc/ob/merged.csv",
+        type="sub",
+        time_range=(100, 850),
+        is_random=0,)
+    # batch_decode_hidden_eeg(
+    #     hidden_eeg_path_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/",
+    #     csv_path_folder="../data/sub/hc/ob/",
+    #     output_csv_path="../results/csv/decode/decode_result_ob_100_500.csv",
+    #     key="outcome_label_remove",
+    #     type="sub",
+    #     time_range=(100, 500),
+    #     is_random=0,
+    # )
+    # plot_accuracy_from_csvs(
+    #     csv_paths=["../results/csv/decode/decode_result_ob.csv",
+    #                "../results/csv/decode/decode_result_ob_random.csv",
+    #                "../results/csv/decode/decode_result_ob_500_700.csv",],
+    #     png_save_path="../results/png/decode/decode_acc_ob.png")

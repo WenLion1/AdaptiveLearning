@@ -7,6 +7,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import torch
+from imblearn.over_sampling import RandomOverSampler
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import to_rgba
@@ -14,12 +15,20 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import ttest_ind, norm, stats
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedShuffleSplit
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils import shuffle, compute_sample_weight, compute_class_weight
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import trange, tqdm
 
+from scripts.model import EEGClassifier
 from scripts.test import evaluate_model
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
@@ -1055,7 +1064,7 @@ def pairwise_distance_matrix(x,
                              saving_path,
                              is_number_label=False,
                              save_matrix_path=None,
-                             metrix="correlation",):
+                             metrix="correlation", ):
     """
     绘制数据点之间的成对距离矩阵的热图。
 
@@ -1175,7 +1184,7 @@ def batch_pairwise_distance_matrix_remove(hidden_path,
                                           saving_base_path,
                                           matrix_base_path,
                                           is_number_label,
-                                          metrix="correlation",):
+                                          metrix="correlation", ):
     for subdir, _, files in os.walk(hidden_path):
 
         npy_files = [f for f in files if f.endswith('.npy')]
@@ -1364,6 +1373,255 @@ def remove_epochs_from_model(eeg_folder, model_folder, key="combine"):
     print("所有文件处理完成。")
 
 
+# def decode_hidden_eeg(hidden_eeg_path,
+#                       csv_path,
+#                       time_range=(100, 852),
+#                       type="model",
+#                       is_random=0,):
+#     """
+#     从model hidden或者eeg中解码四个方向
+#
+#     :param is_random:
+#     :param hidden_eeg_path:
+#     :param csv_path:
+#     :param type:
+#     :return:
+#     """
+#     if type == "sub":
+#         # 1. 加载 EEG .npy 文件，格式 (epoch, 98, 852)
+#         features = np.load(hidden_eeg_path)
+#         if features.ndim != 3:
+#             raise ValueError("EEG 数据应为三维 [epoch, channels, time]")
+#
+#         start, end = time_range
+#         if not (0 <= start < end <= features.shape[2]):
+#             raise ValueError(f"time_range 应该在 (0, {features.shape[2]}) 范围内，且 start < end")
+#
+#         # 2. 时间裁剪
+#         features = features[:, :, start:end]  # (epoch, 98, time_range)
+#
+#         # 3. 展平为二维特征
+#         X = features.reshape(features.shape[0], -1)  # (epoch, 98 * time_range)
+#         X = X[1:, :]
+#
+#         # 4. 读取 label 并对齐
+#         df = pd.read_csv(csv_path)
+#         if 'label' not in df.columns:
+#             raise ValueError("CSV 文件中必须包含 'label' 列")
+#         y = df['label'].to_numpy()
+#         y = y[1:]
+#         # y = shuffle(y, random_state=42)
+#         if is_random == 1:
+#             y = np.random.randint(1, 5, size=len(y))
+#
+#         if len(X) != len(y):
+#             raise ValueError("EEG 和 label 数量不匹配")
+#
+#         # 5. 打乱并划分数据集
+#         X, y = shuffle(X, y, random_state=42)
+#         X_train, X_test, y_train, y_test = train_test_split(
+#             X, y, test_size=0.2, random_state=100
+#         )
+#         print("训练标签:", np.bincount(y_train))
+#         print("测试标签:", np.bincount(y_test))
+#
+#         # # 6. PCA 降维（保留 95% 以上方差）
+#         # pca = PCA(n_components=0.95, svd_solver='full', random_state=42)
+#         # X_train_pca = pca.fit_transform(X_train)
+#         # X_test_pca = pca.transform(X_test)
+#         # print(f"PCA降维后特征维度: {X_train_pca.shape[1]}")
+#
+#         # 7. 使用 balanced class_weight 的逻辑回归
+#         clf = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=42)
+#     elif type == "model":
+#         # 1. 加载 .pt 文件和 CSV 文件
+#         features = torch.load(hidden_eeg_path)  # [480, 16] 的 tensor
+#         if not isinstance(features, torch.Tensor):
+#             raise ValueError("加载的 .pt 文件不是 tensor")
+#
+#         df = pd.read_csv(csv_path)
+#         if 'label' not in df.columns:
+#             raise ValueError("CSV 文件中必须包含 'label' 列")
+#
+#         # 2. 转换为 numpy 并打乱顺序（保持 features 和 labels 对齐）
+#         X = features.numpy()
+#         y = df['label'].to_numpy()
+#
+#         if len(X) != len(y):
+#             raise ValueError("PT 文件和 CSV 行数不匹配")
+#
+#         X, y = shuffle(X, y, random_state=42)
+#
+#         # 3. 划分训练集和测试集
+#         X_train, X_test, y_train, y_test = train_test_split(
+#             X, y, test_size=0.2, random_state=42
+#         )
+#
+#         # 4. 使用简单的模型解码 label（比如逻辑回归）
+#         clf = LogisticRegression(max_iter=1000)
+#
+#     clf.fit(X_train, y_train)
+#     # 5. 评估
+#     y_pred = clf.predict(X_test)
+#     print("分类报告：")
+#     print(classification_report(y_test, y_pred))
+#     acc = accuracy_score(y_test, y_pred)
+#     return acc
+
+class EarlyStopping:
+    def __init__(self, patience=10, delta=0.0):
+        self.patience = patience
+        self.delta = delta
+        self.best_loss = None
+        self.counter = 0
+        self.early_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+        elif val_loss > self.best_loss - self.delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+
+
+def decode_hidden_eeg(hidden_eeg_path,
+                      csv_path,
+                      time_range=(100, 852),
+                      type="model",
+                      is_random=0):
+    if type == "sub":
+        features = np.load(hidden_eeg_path)
+        if features.ndim != 3:
+            raise ValueError("EEG 数据应为三维 [epoch, channels, time]")
+
+        start, end = time_range
+        if not (0 <= start < end <= features.shape[2]):
+            raise ValueError(f"time_range 应该在 (0, {features.shape[2]}) 范围内，且 start < end")
+
+        features = features[:, :, start:end]
+        X = features.reshape(features.shape[0], -1)
+        X = X[1:, :]  # 去掉第一行（可能是空或无标签）
+
+        df = pd.read_csv(csv_path)
+        if 'label' not in df.columns:
+            raise ValueError("CSV 文件中必须包含 'label' 列")
+        y = df['label'].to_numpy()
+        y = y[1:]  # 同步去掉第一行
+
+        if is_random == 1:
+            y = np.random.randint(1, 5, size=len(y))  # 随机标签用于对照实验
+
+        if len(X) != len(y):
+            raise ValueError("EEG 和 label 数量不匹配")
+
+        X, y = shuffle(X, y, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=100
+        )
+
+        print("标签分布（训练集）:", np.bincount(y_train))
+        print("标签分布（测试集）:", np.bincount(y_test))
+
+        # 转为 tensor 并送入设备
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
+        y_train_tensor = torch.tensor(y_train - 1, dtype=torch.long).to(device)  # 类别从0开始
+        X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
+        y_test_tensor = torch.tensor(y_test - 1, dtype=torch.long).to(device)
+
+        train_loader = DataLoader(
+            TensorDataset(X_train_tensor, y_train_tensor),
+            batch_size=32,
+            shuffle=True
+        )
+
+        model = EEGClassifier(input_size=X_train.shape[1]).to(device)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        # 提前终止机制
+        early_stopper = EarlyStopping(patience=10)
+        best_model_state = None
+
+        # 训练循环
+        model.train()
+        for epoch in trange(10, desc="Training Epochs"):
+            running_loss = 0.0
+            for xb, yb in train_loader:
+                optimizer.zero_grad()
+                output = model(xb)
+                loss = criterion(output, yb)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item() * xb.size(0)
+
+            avg_train_loss = running_loss / len(X_train_tensor)
+
+            # 验证损失
+            model.eval()
+            with torch.no_grad():
+                val_logits = model(X_test_tensor)
+                val_loss = criterion(val_logits, y_test_tensor).item()
+
+            model.train()
+            tqdm.write(f"Epoch {epoch + 1}, Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}")
+
+            if early_stopper(val_loss):
+                print(f"Early stopping triggered at epoch {epoch + 1}")
+                break
+            else:
+                best_model_state = model.state_dict()
+
+        # 使用最佳模型参数进行评估
+        if best_model_state is not None:
+            model.load_state_dict(best_model_state)
+
+        model.eval()
+        with torch.no_grad():
+            logits = model(X_test_tensor)
+            y_pred = torch.argmax(logits, dim=1).cpu().numpy()
+            y_true = y_test_tensor.cpu().numpy()
+
+        print("分类报告（NN for EEG）：")
+        print(classification_report(y_true + 1, y_pred + 1))  # 显示时 +1 回到原标签范围 [1-4]
+        acc = accuracy_score(y_true, y_pred)
+        return acc
+
+    elif type == "model":
+        # 原有逻辑保持不变
+        features = torch.load(hidden_eeg_path)
+        if not isinstance(features, torch.Tensor):
+            raise ValueError("加载的 .pt 文件不是 tensor")
+
+        df = pd.read_csv(csv_path)
+        if 'label' not in df.columns:
+            raise ValueError("CSV 文件中必须包含 'label' 列")
+
+        X = features.numpy()
+        y = df['label'].to_numpy()
+
+        if len(X) != len(y):
+            raise ValueError("PT 文件和 CSV 行数不匹配")
+
+        X, y = shuffle(X, y, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+
+        from sklearn.linear_model import LogisticRegression
+        clf = LogisticRegression(max_iter=1000)
+        clf.fit(X_train, y_train)
+        y_pred = clf.predict(X_test)
+        print("分类报告：")
+        print(classification_report(y_test, y_pred))
+        acc = accuracy_score(y_test, y_pred)
+        return acc
+
+
 if __name__ == "__main__":
     # # 隐藏层轨迹
     # plot_hidden_state_trajectories(hidden_states_dir="../hidden/rnn_layers_1_hidden_16_input_489_CP_100_120.pt",
@@ -1438,15 +1696,23 @@ if __name__ == "__main__":
     #                                matrix_base_path="../results/numpy/model/sub/hc",
     #                                is_number_label=False,
     #                                is_remove="remove")
-    batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/yuanwen_need",
-                                          saving_base_path="../results/numpy/model/sub/yuanwen_need",
-                                          matrix_base_path="../results/numpy/model/sub/yuanwen_need",
-                                          is_number_label=False,)
 
-    # remove_epochs_from_model(eeg_folder="../data/eeg/yuanwen_need/bad_epochs",
-    #                          model_folder="../hidden/sub/yuanwen_need",
-    #                          key="combine")
+    # remove_epochs_from_model(eeg_folder="../data/eeg/yuanwen/bad_epochs",
+    #                          model_folder="../hidden/sub/yuanwen",
+    #                          key="reverse")
+
+    # batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/yuanwen",
+    #                                       saving_base_path="../results/numpy/model/sub/yuanwen",
+    #                                       matrix_base_path="../results/numpy/model/sub/yuanwen",
+    #                                       is_number_label=False,)
 
     # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
     #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_408_466_467_468.npy",
     #                       keyword="combine")
+
+    """
+    根据model hidden解码四个方向
+    """
+    decode_hidden_eeg(pt_path="../hidden/240_rule/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt",
+                      csv_path="../data/240_rule/df_test_combine_480_outcome_label.csv",
+                      type="model")

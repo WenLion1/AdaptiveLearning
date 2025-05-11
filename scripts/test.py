@@ -242,21 +242,22 @@ def batch_evaluate(data_folder_path,
 
 
 if __name__ == "__main__":
-    batch_evaluate(data_folder_path="../data/sub/yuanwen_need",
-                   model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
-                   results_folder_path="../results/csv/sub/yuanwen_need",
-                   hidden_state_save_dir="../hidden/sub/yuanwen_need",
-                   is_save_hidden_state=1,
-                   num_layers=1,
-                   model_type="rnn",
-                   hidden_size=16,)
-
-    # evaluate_model(data_dir="../data/sub/hc/405/ADL_B_405_DataCP_405.csv",
-    #                model_path="../models/10/rnn_layers_1_hidden_16_input_489_10.h5",
-    #                results_dir="../results",
-    #                hidden_states_save_dir="../hidden",
+    # batch_evaluate(data_folder_path="../data/sub/yuanwen",
+    #                model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
+    #                results_folder_path="../results/csv/sub/yuanwen",
+    #                hidden_state_save_dir="../hidden/sub/yuanwen",
     #                is_save_hidden_state=1,
-    #                test_type="combine",
-    #                model_type="rnn",
     #                num_layers=1,
-    #                hidden_size=16,)
+    #                model_type="rnn",
+    #                hidden_size=16,
+    #                )
+
+    evaluate_model(data_dir="../data/240_rule/df_test_combine_480.csv",
+                   model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
+                   results_dir="../results/csv/240_rule",
+                   hidden_states_save_dir="../hidden/240_rule",
+                   is_save_hidden_state=1,
+                   test_type="combine",
+                   model_type="rnn",
+                   num_layers=1,
+                   hidden_size=16,)
