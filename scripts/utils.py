@@ -832,6 +832,6 @@ if __name__ == "__main__":
     """
     删除outcome label里的坏epoch
     """
-    remove_rows_by_npy(source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/cp",
-                       target_csv_folder="../data/sub/hc/cp",
-                       key="outcome_label")
+    remove_rows_by_npy(source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/ob",
+                       target_csv_folder="../data/sub/hc/ob",
+                       key="combine")

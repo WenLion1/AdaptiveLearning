@@ -8,14 +8,18 @@ import scipy
 import torch
 from matplotlib import pyplot as plt
 from mne.channels import find_ch_adjacency
+from mne.decoding import SlidingEstimator, cross_val_multiscore
 from scipy.io import loadmat
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import pearsonr, spearmanr, ttest_1samp, zscore
-from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.metrics import r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from mne.stats import permutation_cluster_test, permutation_cluster_1samp_test
+from sklearn.svm import LinearSVC
 from twisted.python.util import println
 
 from scripts.analysis import decode_hidden_eeg
@@ -1832,6 +1836,119 @@ def plot_accuracy_from_csvs(csv_paths, png_save_path, title="Accuracy Comparison
     print(f"图已保存到 {png_save_path}")
 
 
+def decode_eeg_by_time(eeg_hidden_path,
+                       label_path,
+                       save_path,
+                       cv=5):
+    """
+    在单个的每个时间点上训练，然后在 test epoch 的对应时间点上测试
+
+    :param save_path: 图像保存的路径
+    :param eeg_hidden_path: EEG 数据的 .npy 路径
+    :param label_path: 标签的 .csv 路径
+    :param cv: 交叉验证的折数
+    """
+    eeg_data = np.load(eeg_hidden_path)
+    X = eeg_data[1:, :]  # 去掉第一行
+    print("EEG shape:", X.shape)
+
+    df = pd.read_csv(label_path)
+    if 'label' not in df.columns:
+        raise ValueError("CSV 文件中必须包含 'label' 列")
+    y = df['label'].to_numpy()[1:]  # 同步去掉第一行
+    print("Label shape:", y.shape)
+
+    # 使用 RandomForestClassifier 代替 LogisticRegression
+    clf = make_pipeline(
+        StandardScaler(),
+        RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42)  # 使用随机森林分类器
+    )
+
+    time_decod = SlidingEstimator(clf, n_jobs=None, scoring="accuracy", verbose=True)
+    skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+    scores = cross_val_multiscore(time_decod, X, y, cv=skf, n_jobs=None)
+    scores = np.mean(scores, axis=0)
+
+    # 绘图
+    fig, ax = plt.subplots()
+    fixed_times = np.linspace(-1, 0.5, len(scores))  # 创建和 scores 长度匹配的时间轴
+    ax.plot(fixed_times, scores, label="score")
+    ax.axhline(0.25, color="k", linestyle="--", label="chance")  # 设置 chance line
+    ax.set_xlabel("Times")
+    ax.set_ylabel("Accuracy")
+    ax.legend()
+    ax.axvline(0.0, color="k", linestyle="-")
+    ax.set_title("Sensor space decoding")
+
+    # 保存图像
+    plt.savefig(save_path)  # 保存图像到指定路径
+    plt.close()  # 关闭图像，释放内存
+
+
+def batch_decode_eeg_by_time(eeg_data_folder,
+                             label_data_folder,
+                             save_path_folder,
+                             cv=5,
+                             label_key="outcome_label_remove"):
+    """
+    批量解码 EEG 数据并保存图像。遍历 eeg_data_folder 下的所有 .npy 文件，
+    对每个文件进行解码并将结果保存。
+
+    :param eeg_data_folder: EEG 数据文件夹路径
+    :param label_data_folder: 标签数据文件夹路径
+    :param save_path_folder: 保存图像的文件夹路径
+    :param cv: 交叉验证折数
+    :param label_key: 标签对应的关键字（部分文件名）
+    """
+    # 获取所有符合条件的文件
+    eeg_files = [f for f in os.listdir(eeg_data_folder) if re.match(r"^\d+_", f) and f.endswith(".npy")]
+
+    for eeg_file in eeg_files:
+        # 提取文件名中的数字部分
+        subject_id = eeg_file.split("_")[0]
+
+        # 构建 eeg_hidden_path
+        eeg_hidden_path = os.path.join(eeg_data_folder, eeg_file)
+        print(f"Processing EEG file: {eeg_hidden_path}")
+
+        # 找到对应的标签文件夹
+        label_folder = os.path.join(label_data_folder, subject_id)
+
+        if not os.path.exists(label_folder):
+            print(f"Label folder for subject {subject_id} not found, skipping.")
+            continue
+
+        # 查找标签文件，文件名中包含 label_key
+        label_file = None
+        for label_file_candidate in os.listdir(label_folder):
+            if label_key in label_file_candidate and label_file_candidate.endswith(".csv"):
+                label_file = label_file_candidate
+                break
+
+        if label_file is None:
+            print(f"Label file with key '{label_key}' not found for subject {subject_id}, skipping.")
+            continue
+
+        # 构建 label_path
+        label_path = os.path.join(label_folder, label_file)
+        print(f"Processing label file: {label_path}")
+
+        # 构建保存路径
+        save_path = os.path.join(save_path_folder, subject_id)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)  # 创建子文件夹
+
+        save_image_path = os.path.join(save_path, "decode_eeg_by_time.png")
+        print(f"Saving plot to: {save_image_path}")
+
+        # 调用 decode_eeg_by_time 方法处理并保存图像
+        decode_eeg_by_time(eeg_hidden_path,
+                           label_path,
+                           save_image_path,
+                           cv=cv)
+        print(f"Completed processing for subject {subject_id}")
+
+
 if __name__ == "__main__":
     """
     计算eeg rdm
@@ -1921,12 +2038,12 @@ if __name__ == "__main__":
     """
     根据eeg解码四个方向
     """
-    decode_hidden_eeg(
-        hidden_eeg_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/merged.npy",
-        csv_path="../data/sub/hc/ob/merged.csv",
-        type="sub",
-        time_range=(100, 850),
-        is_random=0,)
+    # decode_hidden_eeg(
+    #     hidden_eeg_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/merged.npy",
+    #     csv_path="../data/sub/hc/ob/merged.csv",
+    #     type="sub",
+    #     time_range=(100, 850),
+    #     is_random=0,)
     # batch_decode_hidden_eeg(
     #     hidden_eeg_path_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/",
     #     csv_path_folder="../data/sub/hc/ob/",
@@ -1941,3 +2058,14 @@ if __name__ == "__main__":
     #                "../results/csv/decode/decode_result_ob_random.csv",
     #                "../results/csv/decode/decode_result_ob_500_700.csv",],
     #     png_save_path="../results/png/decode/decode_acc_ob.png")
+
+    # decode_eeg_by_time(
+    #     eeg_hidden_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/405_clean.npy",
+    #     label_path="../data/sub/hc/ob/405/combine_405_outcome_label_remove.csv",
+    #     save_path="../results/png/decode/sub/hc/405/decode_eeg_by_time.png")
+    batch_decode_eeg_by_time(eeg_data_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/cp/",
+                             label_data_folder="../data/sub/hc/cp/",
+                             save_path_folder="../results/png/decode/sub/hc/cp",
+                             cv=5,
+                             label_key="outcome_label_remove",
+                             )
