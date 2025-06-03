@@ -42,6 +42,12 @@ normalizer = transforms.Normalize(mean=[0.485, 0.456, 0.406],
 
 
 ###############################################################################
+
+def angular_difference_deg(angle1, angle2):
+    """返回余弦角差：1 - cos(angle1 - angle2)，输入为角度"""
+    radians_diff = np.deg2rad(angle1 - angle2)
+    return 1 - np.cos(radians_diff)
+
 def noise_func(x, noise_level):
     """
     add guassian noise to the images during agumentation procedures
@@ -727,9 +733,7 @@ def process_folder_for_key(base_folder,
                 generate_outcome_label(csv_path)
 
 
-def remove_rows_by_npy(source_npy_folder,
-                       target_csv_folder,
-                       key="outcome_label"):
+def remove_rows_by_npy(source_npy_folder, target_csv_folder, key="outcome_label"):
     """
     遍历 source_npy_folder 中的所有 .npy 文件，根据每个 .npy 文件中记录的布尔数组，
     在 target_csv_folder 中找到对应子文件夹下带有 key 的 csv 文件，并删除第一行及布尔值为 True 的行，
@@ -749,38 +753,35 @@ def remove_rows_by_npy(source_npy_folder,
             print(f"跳过 {npy_file}，不是布尔类型数组。")
             continue
 
-        # 找到对应子文件夹
-        subfolder = os.path.join(target_csv_folder, number)
-        if not os.path.isdir(subfolder):
-            print(f"未找到子文件夹：{subfolder}")
-            continue
+        # 遍历 target_csv_folder 下的所有子文件夹
+        for root, dirs, files in os.walk(target_csv_folder):
+            for dir in dirs:
+                subfolder = os.path.join(root, dir)
+                # 在每个子文件夹中查找包含关键字 key 的 CSV 文件，且文件名中不包含 "remove"
+                csv_files = [f for f in os.listdir(subfolder) if key in f and f.endswith(".csv") and "remove" not in f]
+                if not csv_files:
+                    continue
 
-        # 找到带 key 的 csv 文件
-        csv_files = [f for f in os.listdir(subfolder) if key in f and f.endswith(".csv")]
-        if not csv_files:
-            print(f"{subfolder} 中未找到包含关键字 '{key}' 的 CSV 文件。")
-            continue
-        csv_file = csv_files[0]  # 只取第一个匹配的
+                for csv_file in csv_files:
+                    csv_path = os.path.join(subfolder, csv_file)
+                    df = pd.read_csv(csv_path)
 
-        csv_path = os.path.join(subfolder, csv_file)
-        df = pd.read_csv(csv_path)
+                    if len(df) != len(mask):
+                        print(f"{csv_file} 行数与 {npy_file} 不匹配，跳过。")
+                        continue
 
-        if len(df) != len(mask):
-            print(f"{csv_file} 行数与 {npy_file} 不匹配，跳过。")
-            continue
+                    # 构建新掩码：删除第一行 + mask 为 True 的行
+                    new_mask = mask.copy()
+                    # new_mask[0] = True  # 删除第一行
 
-        # 构建新掩码：删除第一行 + mask 为 True 的行
-        new_mask = mask.copy()
-        # new_mask[0] = True  # 删除第一行
+                    # 删除 new_mask 为 True 的行
+                    df_filtered = df[~new_mask].reset_index(drop=True)
 
-        # 删除 new_mask 为 True 的行
-        df_filtered = df[~new_mask].reset_index(drop=True)
-
-        # 保存为新文件
-        new_csv_name = csv_file.replace(".csv", "_remove.csv")
-        new_csv_path = os.path.join(subfolder, new_csv_name)
-        df_filtered.to_csv(new_csv_path, index=False)
-        print(f"保存过滤后的文件到：{new_csv_path}")
+                    # 保存为新文件
+                    new_csv_name = csv_file.replace(".csv", "_remove.csv")
+                    new_csv_path = os.path.join(subfolder, new_csv_name)
+                    df_filtered.to_csv(new_csv_path, index=False)
+                    print(f"保存过滤后的文件到：{new_csv_path}")
 
 
 if __name__ == "__main__":
@@ -832,6 +833,6 @@ if __name__ == "__main__":
     """
     删除outcome label里的坏epoch
     """
-    remove_rows_by_npy(source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/ob",
-                       target_csv_folder="../data/sub/hc/ob",
-                       key="combine")
+    remove_rows_by_npy(source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/cp",
+                       target_csv_folder="../data/sub/hc/cp",
+                       key="_reverse.csv")

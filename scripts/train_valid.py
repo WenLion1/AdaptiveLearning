@@ -210,39 +210,42 @@ def train_valid_loop(network,
     return network, losses
 
 
-if __name__ == "__main__":
-    # 实验参数
+def train_valid(model_name="rnn",
+                input_size=489,
+                hidden_size=16,
+                num_layers=1,
+                output_size=2,
+                batch_size=1,
+                sequence_length=240,
+                model_dir="../models/240_rule",
+                learning_rate=1e-4,
+                l2_decay=1e-8,
+                n_epochs=int(1e5),
+                patience=2,
+                warmup_epochs=2,
+                tol=1e-4,
+                type="ob",
+                ):
     right_now = time.localtime()
-    n_epoch = 1000
-
-    # 模型参数
-    model_name = "rnn"
-    input_size = 489
-    hidden_size = 16
-    num_layers = 1
-    output_size = 2
-    batch_size = 1
-    sequence_length = 240
-    model_dir = "../models/240_rule"
-
-    learning_rate = 1e-4
-    l2_decay = 1e-8
-    n_epochs = int(1e5)
-    patience = 2
-    warmup_epochs = 2
-    tol = 1e-4
-    saving_name = os.path.join(model_dir,
-                               f'test_OB_first.h5')
+    data_dir = '../data/240_rule'
+    model_save_name = f"{model_name}_layers_{num_layers}_hidden_{hidden_size}_input_489.h5"
 
     # load dataframes
-    data_dir = '../data/240_rule'
-    df_train = pd.read_csv(os.path.join(data_dir, 'df_train_combine_OB_first.csv'))
-    df_valid = pd.read_csv(os.path.join(data_dir, 'df_valid_combine_OB_first.csv'))
+    if type == "ob":
+        saving_name = os.path.join(model_dir,
+                                   model_save_name)
+        df_train = pd.read_csv(os.path.join(data_dir, 'df_train_combine_OB_first.csv'))
+        df_valid = pd.read_csv(os.path.join(data_dir, 'df_valid_combine_OB_first.csv'))
+    elif type == "cp":
+        saving_name = os.path.join(model_dir,
+                                   model_save_name)
+        df_train = pd.read_csv(os.path.join(data_dir, 'df_train_combine_CP_first.csv'))
+        df_valid = pd.read_csv(os.path.join(data_dir, 'df_valid_combine_CP_first.csv'))
 
     # build dataloaders
     dataset_train = generate_dataset(df_train,
                                      transform_steps=None,
-                                     sequence_length=sequence_length, )
+                                     sequence_length=sequence_length,)
     dataloader_train = DataLoader(dataset_train,
                                   batch_size=batch_size,
                                   shuffle=False, )
@@ -280,4 +283,10 @@ if __name__ == "__main__":
                                        tol=tol,
                                        saving_name=saving_name,
                                        sequence_length=sequence_length, )
+
     del network
+
+
+if __name__ == "__main__":
+
+    train_valid()

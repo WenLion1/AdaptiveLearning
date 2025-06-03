@@ -417,7 +417,7 @@ if __name__ == "__main__":
     df_valid_combine.to_csv(os.path.join(data_dir, 'df_valid_combine_OB_first.csv'), index=False)
     df_test_combine.to_csv(os.path.join(data_dir, 'df_test_combine_OB_first.csv'), index=False)
 
-    # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine.csv"))
+    # df_train = pd.read_csv(os.path.join(data_dir, "df_train_combine_CP_first.csv"))
     # #
     # dataset = generate_dataset(df_train,
     #                            transform_steps=None)

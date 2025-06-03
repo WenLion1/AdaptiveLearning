@@ -171,7 +171,11 @@ def evaluate_model(data_dir,
         ob_type = "UNKNOWN"  # 如果都没有则标记为UNKNOWN
 
     # 将结果保存到CSV
-    csv_path = os.path.join(results_dir, f'combine_{ob_type}_{os.path.basename(model_path).split(".")[0]}_cos.csv')
+    csv_path = os.path.join(results_dir, f"{model_type}_layers_{num_layers}_hidden_{hidden_size}")
+    csv_path = os.path.join(csv_path, f'combine_{ob_type}_{os.path.basename(model_path).split(".")[0]}_cos.csv')
+    # 确保目录存在
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
     results.to_csv(csv_path, index=False)
 
     return csv_path, hidden_states
@@ -188,30 +192,34 @@ def batch_evaluate(data_folder_path,
                    num_layers=3,
                    output_size=2,
                    batch_size=1,
-                   is_save_hidden_state=0, ):
+                   is_save_hidden_state=0,
+                   skip_keys=None):
     """
     遍历 data_folder_path 下的所有子文件夹，评估每个 CSV 文件并保存结果到 results_folder_path。
+    如果 CSV 文件名包含 skip_keys 中的关键词，则跳过。
     """
+    if skip_keys is None:
+        skip_keys = []
 
-    # 遍历 data_folder_path 的所有子文件夹
     for subdir, _, files in os.walk(data_folder_path):
-        # 筛选出 CSV 文件
         csv_files = [f for f in files if f.endswith('.csv')]
 
         if not csv_files:
             print(f"在文件夹 {subdir} 中未找到任何 CSV 文件，跳过该文件夹。")
-            continue  # 如果没有找到 CSV 文件，则跳过
+            continue
 
-        # 为当前子文件夹创建相应的结果保存路径
         subfolder_name = os.path.basename(subdir)
         current_results_dir = os.path.join(results_folder_path, subfolder_name)
         current_hidden_dir = os.path.join(hidden_state_save_dir, subfolder_name)
-        os.makedirs(current_results_dir, exist_ok=True)  # 创建子文件夹（如果尚不存在）
+        os.makedirs(current_results_dir, exist_ok=True)
 
-
-        # 遍历当前子文件夹中的每个 CSV 文件
         for csv_file in csv_files:
-            data_dir = os.path.join(subdir, csv_file)  # 完整的 CSV 文件路径
+            # 如果文件名中包含跳过关键词，则跳过
+            if any(skip_key in csv_file for skip_key in skip_keys):
+                print(f"跳过文件 {csv_file}（包含关键词: {skip_keys}）")
+                continue
+
+            data_dir = os.path.join(subdir, csv_file)
             print(f"正在评估文件: {data_dir}")
 
             if "DataCP" in csv_file:
@@ -223,7 +231,6 @@ def batch_evaluate(data_folder_path,
             else:
                 test_type = "combine"
 
-            # 调用评估模型函数
             evaluate_model(data_dir,
                            model_path,
                            current_results_dir,
@@ -242,22 +249,23 @@ def batch_evaluate(data_folder_path,
 
 
 if __name__ == "__main__":
-    # batch_evaluate(data_folder_path="../data/sub/yuanwen",
-    #                model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
-    #                results_folder_path="../results/csv/sub/yuanwen",
-    #                hidden_state_save_dir="../hidden/sub/yuanwen",
-    #                is_save_hidden_state=1,
-    #                num_layers=1,
-    #                model_type="rnn",
-    #                hidden_size=16,
-    #                )
-
-    evaluate_model(data_dir="../data/240_rule/df_test_combine_480.csv",
+    batch_evaluate(data_folder_path="../data/sub/hc/cp",
                    model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
-                   results_dir="../results/csv/240_rule",
-                   hidden_states_save_dir="../hidden/240_rule",
-                   is_save_hidden_state=1,
-                   test_type="combine",
-                   model_type="rnn",
+                   results_folder_path="../results/csv/sub/hc/cp",
+                   hidden_state_save_dir="../hidden/sub/hc/cp",
+                   is_save_hidden_state=0,
                    num_layers=1,
-                   hidden_size=16,)
+                   model_type="rnn",
+                   hidden_size=16,
+                   skip_keys=["label", "remove"],
+                   )
+
+    # evaluate_model(data_dir="../data/240_rule/df_test_combine_480.csv",
+    #                model_path="../models/240_rule/rnn_layers_1_hidden_16_input_489.h5",
+    #                results_dir="../results/csv/240_rule",
+    #                hidden_states_save_dir="../hidden/240_rule",
+    #                is_save_hidden_state=0,
+    #                test_type="combine",
+    #                model_type="rnn",
+    #                num_layers=1,
+    #                hidden_size=16,)

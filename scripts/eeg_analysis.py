@@ -23,6 +23,9 @@ from sklearn.svm import LinearSVC
 from twisted.python.util import println
 
 from scripts.analysis import decode_hidden_eeg
+from scripts.test import batch_evaluate
+from scripts.train_valid import train_valid
+from scripts.utils import angular_difference_deg, remove_rows_by_npy
 
 
 def compute_and_plot_dissimilarity_matrices(eeg_data,
@@ -1949,6 +1952,263 @@ def batch_decode_eeg_by_time(eeg_data_folder,
         print(f"Completed processing for subject {subject_id}")
 
 
+def compare_behavior(model_csv,
+                     human_csv,
+                     corr_func=pearsonr, ):
+    """
+    比较模型和人类行为误差之间的相关性。
+
+    :param model_csv:
+    :param human_csv:
+    :param corr_func:
+    :return:
+    """
+    # 读取CSV文件
+    model_df = pd.read_csv(model_csv)
+    human_df = pd.read_csv(human_csv)
+
+    # 确保两者行数一致
+    if len(model_df) != len(human_df):
+        raise ValueError("模型数据和人类数据的行数不一致！")
+
+    # 提取 outcome 和 pred
+    model_outcome = model_df["outcome"].values
+    model_pred = model_df["pred"].values
+    human_outcome = human_df["outcome"].values
+    human_pred = human_df["pred"].values
+
+    # 计算角度误差（范围在 [0, 2]）
+    model_error = angular_difference_deg(model_outcome, model_pred)
+    human_error = angular_difference_deg(human_outcome, human_pred)
+
+    # np.random.shuffle(human_error)
+
+    # 计算相关系数
+    correlation, p_value = corr_func(model_error, human_error)
+
+    return correlation
+
+
+def batch_compare_behavior(model_folder,
+                           human_folder,
+                           output_path,
+                           corr_func=pearsonr,
+                           type='ob'):
+    """
+    批量比较多个模型和人类行为文件的相关性，并保存结果。
+
+    参数：
+        model_folder (str): 模型行为数据的文件夹路径
+        human_folder (str): 人类行为数据的文件夹路径
+        output_path (str): 保存相关系数数组的路径（.npy 或 .csv）
+        corr_func (function): 相关函数，默认为 pearsonr
+        type (str): 'ob' 或 'cp'，决定读取哪种人类行为文件
+    """
+    correlation_list = []
+
+    # 遍历所有数字命名的子文件夹
+    for subfolder in sorted(os.listdir(model_folder)):
+        if not subfolder.isdigit():
+            continue
+
+        model_subdir = os.path.join(model_folder, subfolder)
+        human_subdir = os.path.join(human_folder, subfolder)
+
+        # 模型文件：子文件夹中包含 'remove' 的文件
+        model_files = [f for f in os.listdir(model_subdir) if "remove" in f and f.endswith(".csv")]
+        if not model_files:
+            print(f"没有找到模型文件：{model_subdir}")
+            continue
+        model_csv = os.path.join(model_subdir, model_files[0])
+
+        # 人类文件名根据 type 变化
+        if type == 'cp':
+            human_filename = f"combine_{subfolder}_reverse_remove.csv"
+        else:  # 默认 'ob'
+            human_filename = f"combine_{subfolder}_remove.csv"
+
+        human_csv = os.path.join(human_subdir, human_filename)
+        if not os.path.exists(human_csv):
+            print(f"没有找到人类行为文件：{human_csv}")
+            continue
+
+        # 调用 compare_behavior
+        try:
+            corr = compare_behavior(model_csv,
+                                    human_csv,
+                                    corr_func=corr_func)
+            correlation_list.append(corr)
+            print(f"{subfolder} -> 相关系数: {corr:.4f}")
+        except Exception as e:
+            print(f"处理 {subfolder} 时出错: {e}")
+            correlation_list.append(np.nan)
+
+    # 保存结果
+    correlation_array = np.array(correlation_list)
+    if output_path.endswith(".npy"):
+        np.save(output_path, correlation_array)
+    elif output_path.endswith(".csv"):
+        np.savetxt(output_path, correlation_array, delimiter=",")
+    else:
+        raise ValueError("output_path 必须以 .npy 或 .csv 结尾")
+    print(f"\n所有相关系数已保存至: {output_path}")
+
+
+def sliding_correlation_analysis_permutation_v2(path_a,
+                                                path_b,
+                                                path_c,
+                                                path_d,
+                                                time_range=(100, 200),
+                                                corr_method="pearson",
+                                                n_permutations=10000,
+                                                seed=42):
+    np.random.seed(seed)
+
+    # 1. 加载数据
+    a = np.load(path_a)  # (13,)
+    b = np.load(path_b)  # (13, 750)
+    c = np.load(path_c)  # (12,)
+    d = np.load(path_d)  # (12, 750)
+
+    # 验证维度
+    if a.shape != (13,) or b.shape[0] != 13:
+        print("a/b 输入数据维度不匹配")
+        return -2
+    if c.shape != (12,) or d.shape[0] != 12:
+        print("c/d 输入数据维度不匹配")
+        return -2
+
+    t_start, t_end = time_range
+    if t_start < 0 or t_end > b.shape[1] or t_start >= t_end or t_end > d.shape[1]:
+        print(f"非法时间范围: ({t_start}, {t_end})")
+        return -2
+
+    # 2. 截取时间窗口并平均
+    b_sub = b[:, t_start:t_end]  # shape: (13, time_window)
+    b_mean = b_sub.mean(axis=1)  # shape: (13,)
+
+    d_sub = d[:, t_start:t_end]  # shape: (12, time_window)
+    d_mean = d_sub.mean(axis=1)  # shape: (12,)
+
+    # 3. 拼接成两个向量 (25,)
+    ab_vec = np.concatenate([a, c])
+    cd_vec = np.concatenate([b_mean, d_mean])
+    print(ab_vec)
+    print(cd_vec)
+
+    # 4. 计算原始相关系数
+    if corr_method == 'pearson':
+        r_obs, _ = pearsonr(ab_vec, cd_vec)
+    elif corr_method == 'spearman':
+        r_obs, _ = spearmanr(ab_vec, cd_vec)
+    else:
+        raise ValueError("仅支持 pearson 或 spearman")
+
+    # 5. permutation test
+    perm_rs = []
+    for _ in range(n_permutations):
+        cd_perm = np.random.permutation(cd_vec)
+        if corr_method == 'pearson':
+            r, _ = pearsonr(ab_vec, cd_perm)
+        else:
+            r, _ = spearmanr(ab_vec, cd_perm)
+        perm_rs.append(r)
+
+    perm_rs = np.array(perm_rs)
+
+    # 计算p值：右尾概率
+    p_value = np.mean(perm_rs >= r_obs)
+
+    # 6. 可视化
+    plt.figure(figsize=(10, 5))
+    plt.hist(perm_rs, bins=50, color='lightgray', edgecolor='black', label='Null distribution')
+    plt.axvline(r_obs, color='red', linestyle='--', linewidth=2, label=f'Observed r = {r_obs:.4f}')
+    plt.title(f'Permutation Test ({corr_method.title()} correlation)\n'
+              f'p = {p_value:.4f}, time: {t_start}-{t_end}')
+    plt.xlabel('Correlation')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    print(f"Observed correlation r = {r_obs:.4f}")
+    print(f"P-value (permutation test): {p_value:.4f}")
+
+    return r_obs, p_value, perm_rs
+
+
+def get_human_similarity_matrix(model_list=["rnn"],
+                                hidden_state_list=[4, 8, 16, 32, 100, 200, 300],
+                                num_layers_list=[1],
+                                num_save_path="../results/numpy/eeg_model/human_similarity",
+                                model_behave_path="../results/csv/sub/hc",
+                                model_path="../models/240_rule",
+                                model_hidden_path="../hidden/sub/hc",
+                                sub_behave_path="../data/sub/hc",
+                                source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs",
+                                type="ob",
+                                ):
+    to_process = []  # 存储需要处理的组合
+
+    # 构造路径前缀
+    target_dir = os.path.join(num_save_path, type)
+    os.makedirs(target_dir, exist_ok=True)  # 如果目录不存在则创建
+
+    # 构造行为数据目录路径
+    behave_dir = os.path.join(model_behave_path, type)
+
+    # 遍历所有模型、隐藏层、层数组合
+    for model in model_list:
+        for hs in hidden_state_list:
+            for nl in num_layers_list:
+                filename = f"{model}_{hs}_{nl}.npy"
+                filepath = os.path.join(target_dir, filename)
+                if os.path.exists(filepath):
+                    print(f"Skipping existing: {filepath}")
+                    continue
+
+                # 构造行为文件匹配子串
+                match_str = f"_{model}_layers_{nl}_hidden_{hs}_"
+
+                model_str = f"{model}_layers_{nl}_hidden_{hs}_input_489.h5"
+                model_target = os.path.join(model_path, model_str)
+
+                if not os.path.exists(model_target):
+                    print(f"当前正在处理: {match_str}")
+
+                    # 训练模型
+                    train_valid(model_name=model,
+                                hidden_size=hs,
+                                num_layers=nl, )
+
+                if not os.path.exists(model_target):
+                    raise FileNotFoundError(f"Model path does not exist: {model_target}")
+
+                sub_behave = os.path.join(sub_behave_path, type)
+                batch_evaluate(data_folder_path=sub_behave,
+                               model_path=model_target,
+                               results_folder_path=behave_dir,
+                               hidden_state_save_dir=model_hidden_path,
+                               is_save_hidden_state=1,
+                               num_layers=nl,
+                               model_type=model,
+                               hidden_size=hs,
+                               skip_keys=["label", "remove"],
+                               )
+
+                source_npy_path = os.path.join(source_npy_folder, type)
+                if type == "ob":
+                    remove_rows_key = f"combine_combine_{model}_layers_{nl}_hidden_{hs}_"
+                    remove_rows_by_npy(source_npy_folder=source_npy_path,
+                                       target_csv_folder=behave_dir,
+                                       key=remove_rows_key)
+                elif type == "cp":
+                    remove_rows_key = f"combine_reverse_{model}_layers_{nl}_hidden_{hs}_"
+                    remove_rows_by_npy(source_npy_folder=source_npy_path,
+                                       target_csv_folder=behave_dir,
+                                       key=remove_rows_key)
+
+
 if __name__ == "__main__":
     """
     计算eeg rdm
@@ -2063,9 +2323,34 @@ if __name__ == "__main__":
     #     eeg_hidden_path="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/ob/405_clean.npy",
     #     label_path="../data/sub/hc/ob/405/combine_405_outcome_label_remove.csv",
     #     save_path="../results/png/decode/sub/hc/405/decode_eeg_by_time.png")
-    batch_decode_eeg_by_time(eeg_data_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/cp/",
-                             label_data_folder="../data/sub/hc/cp/",
-                             save_path_folder="../results/png/decode/sub/hc/cp",
-                             cv=5,
-                             label_key="outcome_label_remove",
-                             )
+    # batch_decode_eeg_by_time(eeg_data_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/clean_npy/cp/",
+    #                          label_data_folder="../data/sub/hc/cp/",
+    #                          save_path_folder="../results/png/decode/sub/hc/cp",
+    #                          cv=5,
+    #                          label_key="outcome_label_remove",
+    #                          )
+
+    """
+    人类相似度
+    """
+    # print(compare_behavior(
+    #     model_csv="../results/csv/sub/hc/ob/407/combine_combine_rnn_layers_1_hidden_16_input_489_cos_remove.csv",
+    #     human_csv="../data/sub/hc/ob/407/combine_407_remove.csv",
+    #     corr_func=pearsonr, ))
+    # batch_compare_behavior(model_folder="../results/csv/sub/hc/cp/",
+    #                        human_folder="../data/sub/hc/cp/",
+    #                        output_path="../results/numpy/eeg_model/human_similarity/cp/pre_dis_cor.npy",
+    #                        corr_func=pearsonr,
+    #                        type="cp",)
+    # sliding_correlation_analysis_permutation_v2(path_a="../results/numpy/eeg_model/human_similarity/ob/pre_dis_cor.npy",
+    #                                             path_b="../results/numpy/eeg_model/correlation/hc/rsa_results_ob_first.npy",
+    #                                             path_c="../results/numpy/eeg_model/human_similarity/cp/pre_dis_cor.npy",
+    #                                             path_d="../results/numpy/eeg_model/correlation/hc/rsa_results_cp_first.npy",
+    #                                             time_range=(400, 500),
+    #                                             corr_method='pearson',
+    #                                             n_permutations=10000, )
+
+    """
+    从两个维度计算人类相似度
+    """
+    get_human_similarity_matrix()
