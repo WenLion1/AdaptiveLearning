@@ -724,6 +724,7 @@ def process_folder_for_key(base_folder,
 
     :param base_folder: 主文件夹路径
     :param key: 要匹配的CSV文件名关键字
+
     """
     for root, dirs, files in os.walk(base_folder):
         for file in files:
@@ -745,6 +746,8 @@ def remove_rows_by_npy(source_npy_folder, target_csv_folder, key="outcome_label"
 
         # 解析数字 ID
         number = npy_file.split("_")[0]
+        print(f"当前正在处理: {number}")
+
         npy_path = os.path.join(source_npy_folder, npy_file)
 
         # 读取 .npy 文件（布尔数组）
@@ -753,35 +756,41 @@ def remove_rows_by_npy(source_npy_folder, target_csv_folder, key="outcome_label"
             print(f"跳过 {npy_file}，不是布尔类型数组。")
             continue
 
-        # 遍历 target_csv_folder 下的所有子文件夹
-        for root, dirs, files in os.walk(target_csv_folder):
-            for dir in dirs:
-                subfolder = os.path.join(root, dir)
-                # 在每个子文件夹中查找包含关键字 key 的 CSV 文件，且文件名中不包含 "remove"
-                csv_files = [f for f in os.listdir(subfolder) if key in f and f.endswith(".csv") and "remove" not in f]
-                if not csv_files:
+        # 找到以 number 命名的子文件夹
+        number_folder = os.path.join(target_csv_folder, number)
+        if not os.path.isdir(number_folder):
+            print(f"未找到子文件夹：{number_folder}")
+            continue
+
+        # 在 number_folder 中递归遍历所有子文件夹
+        for root, dirs, files in os.walk(number_folder):
+            # 在每个子文件夹中查找包含关键字 key 的 CSV 文件，且文件名中不包含 "remove"
+            csv_files = [f for f in files if key in f and f.endswith(".csv") and "remove" not in f]
+            if not csv_files:
+                continue
+
+            for csv_file in csv_files:
+                csv_path = os.path.join(root, csv_file)
+                df = pd.read_csv(csv_path)
+
+                if len(df) != len(mask):
+                    print(f"{csv_file} 行数与 {npy_file} 不匹配，跳过。")
                     continue
 
-                for csv_file in csv_files:
-                    csv_path = os.path.join(subfolder, csv_file)
-                    df = pd.read_csv(csv_path)
+                # 构建新掩码：删除第一行 + mask 为 True 的行
+                new_mask = mask.copy()
+                # new_mask[0] = True  # 删除第一行
 
-                    if len(df) != len(mask):
-                        print(f"{csv_file} 行数与 {npy_file} 不匹配，跳过。")
-                        continue
+                # 删除 new_mask 为 True 的行
+                df_filtered = df[~new_mask].reset_index(drop=True)
 
-                    # 构建新掩码：删除第一行 + mask 为 True 的行
-                    new_mask = mask.copy()
-                    # new_mask[0] = True  # 删除第一行
+                # 保存为新文件
+                new_csv_name = csv_file.replace(".csv", "_remove.csv")
+                new_csv_path = os.path.join(root, new_csv_name)
 
-                    # 删除 new_mask 为 True 的行
-                    df_filtered = df[~new_mask].reset_index(drop=True)
+                df_filtered.to_csv(new_csv_path, index=False)
+                print(f"保存过滤后的文件到：{new_csv_path}")
 
-                    # 保存为新文件
-                    new_csv_name = csv_file.replace(".csv", "_remove.csv")
-                    new_csv_path = os.path.join(subfolder, new_csv_name)
-                    df_filtered.to_csv(new_csv_path, index=False)
-                    print(f"保存过滤后的文件到：{new_csv_path}")
 
 
 if __name__ == "__main__":

@@ -1697,14 +1697,14 @@ if __name__ == "__main__":
     #                                is_number_label=False,
     #                                is_remove="remove")
 
-    # remove_epochs_from_model(eeg_folder="../data/eeg/yuanwen/bad_epochs",
-    #                          model_folder="../hidden/sub/yuanwen",
-    #                          key="reverse")
+    # remove_epochs_from_model(eeg_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs/ob",
+    #                          model_folder="../hidden/sub/hc",
+    #                          key="combine")
 
-    # batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/yuanwen",
-    #                                       saving_base_path="../results/numpy/model/sub/yuanwen",
-    #                                       matrix_base_path="../results/numpy/model/sub/yuanwen",
-    #                                       is_number_label=False,)
+    batch_pairwise_distance_matrix_remove(hidden_path="../hidden/sub/hc",
+                                          saving_base_path="../results/numpy/model/sub/hc",
+                                          matrix_base_path="../results/numpy/model/sub/hc",
+                                          is_number_label=False,)
 
     # merge_model_rdm_files(root_dir="../results/numpy/model/sub/hc",
     #                       save_path="../results/numpy/model/sub/hc/not_remove_model_rdm_408_466_467_468.npy",
@@ -1713,6 +1713,7 @@ if __name__ == "__main__":
     """
     根据model hidden解码四个方向
     """
-    decode_hidden_eeg(pt_path="../hidden/240_rule/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt",
-                      csv_path="../data/240_rule/df_test_combine_480_outcome_label.csv",
-                      type="model")
+    # decode_hidden_eeg(pt_path="../hidden/240_rule/not_remove/rnn_layers_1_hidden_16_input_489_combine.pt",
+    #                   csv_path="../data/240_rule/df_test_combine_480_outcome_label.csv",
+    #                   type="model")
+

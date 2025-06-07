@@ -102,9 +102,6 @@ def evaluate_model(data_dir,
         for time_step in range(hidden_layer.shape[1]):
             hidden_state_at_time = hidden_layer[:, time_step, :].cpu().detach().numpy()
             hidden_states.append(hidden_state_at_time)
-        print(len(hidden_states))
-        print(hidden_states[0])
-        print("__________________________")
 
         angles_rad = np.radians(outcome_true.cpu().numpy())
         sin = torch.tensor(np.sin(angles_rad)).to(device)

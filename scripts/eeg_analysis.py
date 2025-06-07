@@ -1,5 +1,6 @@
 import os
 import re
+from collections import defaultdict
 
 import mne
 import numpy as np
@@ -854,59 +855,140 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
         return
 
     print(f"找到 {len(common_subjects)} 个匹配的被试编号。")
+    #
+    # # 初始化 RSA 结果矩阵
+    # if type == "time":
+    #     # 初始化 RSA 结果矩阵
+    #     rsa_results_all = np.zeros((len(common_subjects), time_range[1] - time_range[0]))
+    #     time_dur = time_range[1] - time_range[0]
+    #
+    #     # 遍历被试
+    #     for i, sub in enumerate(common_subjects):
+    #         print(f"正在处理被试 {sub} ({i + 1}/{len(common_subjects)})")
+    #
+    #         # 加载 EEG RDM 和模型 RDM
+    #         eeg_rdm_path = os.path.join(eeg_rdm_folder, str(sub) + "_clean", 'rdm')
+    #         model_rdm_path = os.path.join(model_rdm_folder, str(sub), 'rdm', 'remove')
+    #
+    #         eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_by_time_rdm.npy')][0]
+    #         if model_type == "combine":
+    #             model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('combine_processed.npy')][0]
+    #         elif model_type == "reverse":
+    #             model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('reverse_processed.npy')][0]
+    #
+    #         eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
+    #         model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
+    #
+    #         # 检查数据维度
+    #         if eeg_rdm.shape[1] != model_rdm.shape[0]:
+    #             raise ValueError(f"维度不匹配: EEG RDM {eeg_rdm.shape}, 模型 RDM {model_rdm.shape}")
+    #
+    #         # 初始化当前被试的 RSA 结果
+    #         rsa_results = np.zeros((time_range[1] - time_range[0],))
+    #
+    #         # 逐时间点计算相关性
+    #         for t in range(time_range[0], time_range[1]):
+    #             eeg_rdm_t = eeg_rdm[t, :]
+    #             model_rdm_z = zscore(model_rdm)
+    #
+    #             eeg_rdm_z = zscore(eeg_rdm_t)
+    #
+    #             spearman_corr, _ = spearmanr(model_rdm_z, eeg_rdm_z)
+    #             rsa_results[t - time_range[0]] = spearman_corr
+    #
+    #         rsa_results_all[i, :] = rsa_results
 
-    # 初始化 RSA 结果矩阵
     if type == "time":
-        # 初始化 RSA 结果矩阵
-        rsa_results_all = np.zeros((len(common_subjects), time_range[1] - time_range[0]))
         time_dur = time_range[1] - time_range[0]
 
-        # 遍历被试
-        for i, sub in enumerate(common_subjects):
-            print(f"正在处理被试 {sub} ({i + 1}/{len(common_subjects)})")
-
-            # 加载 EEG RDM 和模型 RDM
+        for sub in common_subjects:
+            print(f"正在处理被试 {sub}")
             eeg_rdm_path = os.path.join(eeg_rdm_folder, str(sub) + "_clean", 'rdm')
             model_rdm_path = os.path.join(model_rdm_folder, str(sub), 'rdm', 'remove')
 
-            eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_by_time_rdm.npy')][0]
-            if model_type == "combine":
-                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('combine_processed.npy')][0]
-            elif model_type == "reverse":
-                model_rdm_file = [f for f in os.listdir(model_rdm_path) if f.endswith('reverse_processed.npy')][0]
-
+            eeg_rdm_file = [f for f in os.listdir(eeg_rdm_path) if f.endswith('_clean_rdm.npy')][0]
             eeg_rdm = np.load(os.path.join(eeg_rdm_path, eeg_rdm_file))
-            model_rdm = np.load(os.path.join(model_rdm_path, model_rdm_file))
 
-            # 检查数据维度
-            if eeg_rdm.shape[1] != model_rdm.shape[0]:
-                raise ValueError(f"维度不匹配: EEG RDM {eeg_rdm.shape}, 模型 RDM {model_rdm.shape}")
+            model_rdm_files = [f for f in os.listdir(model_rdm_path) if f.endswith('_processed.npy')]
 
-            # 初始化当前被试的 RSA 结果
-            rsa_results = np.zeros((time_range[1] - time_range[0],))
+            for model_file in model_rdm_files:
+                save_dir = os.path.join(rsa_save_path, str(sub))
+                os.makedirs(save_dir, exist_ok=True)
 
-            # 逐时间点计算相关性
-            for t in range(time_range[0], time_range[1]):
-                eeg_rdm_t = eeg_rdm[t, :]
-                model_rdm_z = zscore(model_rdm)
+                save_file = os.path.join(save_dir, model_file.replace(".npy", "_by_time_rsa.npy"))
 
-                # z_min = np.min(model_rdm_z)
-                # z_max = np.max(model_rdm_z)
-                # model_rdm_z = np.random.uniform(z_min, z_max, size=model_rdm_z.shape)
+                # 如果 save_file 已经存在，则跳过
+                if os.path.exists(save_file):
+                    print(f"文件 {save_file} 已存在，跳过处理。")
+                    continue
 
-                # model_rdm_z = np.random.permutation(model_rdm_z)
+                model_rdm = np.load(os.path.join(model_rdm_path, model_file))
 
-                # model_rdm_z = np.full_like(model_rdm_z, z_max)
-                # print(model_rdm_z)
+                if eeg_rdm.shape[1] != model_rdm.shape[0]:
+                    raise ValueError(f"维度不匹配: EEG RDM {eeg_rdm.shape}, 模型 RDM {model_rdm.shape}")
 
-                eeg_rdm_z = zscore(eeg_rdm_t)
-                # # !!!!!!!!!!!!!!!!!!!!
-                # eeg_rdm_z = np.random.permutation(eeg_rdm_z)
+                rsa_results = np.zeros((time_dur,))
 
-                spearman_corr, _ = spearmanr(model_rdm_z, eeg_rdm_z)
-                rsa_results[t - time_range[0]] = spearman_corr
+                for t in range(time_range[0], time_range[1]):
+                    eeg_rdm_z = zscore(eeg_rdm[t, :])
+                    model_rdm_z = zscore(model_rdm)
+                    spearman_corr, _ = spearmanr(model_rdm_z, eeg_rdm_z)
+                    rsa_results[t - time_range[0]] = spearman_corr
 
-            rsa_results_all[i, :] = rsa_results
+                np.save(save_file, rsa_results)
+
+        # 获取 rsa_save_path 下的所有子文件夹
+        sub_folders = [d for d in os.listdir(rsa_save_path) if os.path.isdir(os.path.join(rsa_save_path, d))]
+
+        # 遍历每个子文件夹
+        for sub_folder in sub_folders:
+            sub_folder_path = os.path.join(rsa_save_path, sub_folder)
+            model_files = [f for f in os.listdir(sub_folder_path) if f.endswith("_by_time_rsa.npy")]
+
+            # 提取所有文件的前缀
+            model_base_names = set(f.replace("_by_time_rsa.npy", "") for f in model_files)
+
+            # 遍历每个前缀
+            for model_base_name in model_base_names:
+                # 保存为新的文件
+                all_save_file = os.path.join(rsa_save_path, model_base_name + "_all.npy")
+                # 如果 save_file 已经存在，则跳过
+                if os.path.exists(all_save_file):
+                    print(f"文件 {all_save_file} 已存在，跳过处理。")
+                    continue
+                # 在所有子文件夹中找到具有相同前缀的文件
+                all_files = []
+                for sub_folder in sub_folders:
+                    sub_folder_path = os.path.join(rsa_save_path, sub_folder)
+                    all_files.extend([os.path.join(sub_folder_path, f) for f in os.listdir(sub_folder_path) if
+                                      f.startswith(model_base_name) and f.endswith("_by_time_rsa.npy")])
+
+                # 如果没有找到文件，跳过
+                if not all_files:
+                    continue
+
+                # 将相同前缀的文件加载到一个数组中
+                rsa_results_all = [np.load(f) for f in all_files]
+                rsa_results_all = np.array(rsa_results_all)
+
+                np.save(all_save_file, rsa_results_all)
+
+                # 如果有 png_save_path，则调用 plot_permutation_test
+                if png_save_path:
+                    png_file = os.path.join(png_save_path, model_base_name + "_all_by_time_rsa.png")
+                    print(png_file)
+                    plot_permutation_test(
+                        rsa_result_path=all_save_file,
+                        time_min=time_min,
+                        time_max=time_max,
+                        time_dur=time_dur,
+                        re_threshold=re_threshold,
+                        png_save_path=png_file,
+                        epoch_data_path=epoch_data_path,
+                        is_every=is_every,
+                        type="time",
+                        montage_type=montage_type
+                    )
     elif type == "channel" or type == "one_time":
         # 初始化 RSA 结果矩阵
         rsa_results_all = np.zeros((len(common_subjects), montage_type))
@@ -951,20 +1033,22 @@ def batch_compute_eeg_model_rdm_correlation_remove(eeg_rdm_folder,
 
             rsa_results_all[i, :] = rsa_results
 
-    # 保存 RSA 结果
-    np.save(rsa_save_path, rsa_results_all)
+    if type != "time":
+        # 保存 RSA 结果
+        np.save(rsa_save_path, rsa_results_all)
 
     if type == "time":
-        plot_permutation_test(rsa_result_path=rsa_save_path,
-                              time_min=time_min,
-                              time_max=time_max,
-                              time_dur=time_dur,
-                              re_threshold=re_threshold,
-                              png_save_path=png_save_path,
-                              epoch_data_path=epoch_data_path,
-                              is_every=is_every,
-                              type="time",
-                              montage_type=montage_type)
+        # plot_permutation_test(rsa_result_path=rsa_save_path,
+        #                       time_min=time_min,
+        #                       time_max=time_max,
+        #                       time_dur=time_dur,
+        #                       re_threshold=re_threshold,
+        #                       png_save_path=png_save_path,
+        #                       epoch_data_path=epoch_data_path,
+        #                       is_every=is_every,
+        #                       type="time",
+        #                       montage_type=montage_type)
+        pass
     elif type == "channel":
         plot_permutation_test(rsa_result_path=rsa_save_path,
                               time_min=time_min,
@@ -1084,7 +1168,6 @@ def plot_permutation_test(rsa_result_path,
     if png_save_path is not None:
         plt.savefig(png_save_path, dpi=300)
         print("相关性图像已保存。")
-    plt.show()
     plt.close()
 
 
@@ -1991,67 +2074,129 @@ def compare_behavior(model_csv,
 
 def batch_compare_behavior(model_folder,
                            human_folder,
-                           output_path,
                            corr_func=pearsonr,
-                           type='ob'):
+                           type="ob"):
     """
-    批量比较多个模型和人类行为文件的相关性，并保存结果。
+    批量比较人类相似度
 
-    参数：
-        model_folder (str): 模型行为数据的文件夹路径
-        human_folder (str): 人类行为数据的文件夹路径
-        output_path (str): 保存相关系数数组的路径（.npy 或 .csv）
-        corr_func (function): 相关函数，默认为 pearsonr
-        type (str): 'ob' 或 'cp'，决定读取哪种人类行为文件
+    :param model_folder:
+    :param human_folder:
+    :param output_path:
+    :param corr_func:
+    :param type:
+    :return:
     """
-    correlation_list = []
+    results = []
 
-    # 遍历所有数字命名的子文件夹
-    for subfolder in sorted(os.listdir(model_folder)):
-        if not subfolder.isdigit():
+    for subdir in os.listdir(model_folder):
+        model_subdir = os.path.join(model_folder, subdir)
+        if not os.path.isdir(model_subdir) or not subdir.isdigit():
             continue
 
-        model_subdir = os.path.join(model_folder, subfolder)
-        human_subdir = os.path.join(human_folder, subfolder)
-
-        # 模型文件：子文件夹中包含 'remove' 的文件
-        model_files = [f for f in os.listdir(model_subdir) if "remove" in f and f.endswith(".csv")]
-        if not model_files:
-            print(f"没有找到模型文件：{model_subdir}")
-            continue
-        model_csv = os.path.join(model_subdir, model_files[0])
-
-        # 人类文件名根据 type 变化
-        if type == 'cp':
-            human_filename = f"combine_{subfolder}_reverse_remove.csv"
-        else:  # 默认 'ob'
-            human_filename = f"combine_{subfolder}_remove.csv"
-
-        human_csv = os.path.join(human_subdir, human_filename)
-        if not os.path.exists(human_csv):
-            print(f"没有找到人类行为文件：{human_csv}")
+        human_subdir = os.path.join(human_folder, subdir)
+        if not os.path.isdir(human_subdir):
+            print(f"跳过未匹配的人类子文件夹: {human_subdir}")
             continue
 
-        # 调用 compare_behavior
-        try:
-            corr = compare_behavior(model_csv,
-                                    human_csv,
-                                    corr_func=corr_func)
-            correlation_list.append(corr)
-            print(f"{subfolder} -> 相关系数: {corr:.4f}")
-        except Exception as e:
-            print(f"处理 {subfolder} 时出错: {e}")
-            correlation_list.append(np.nan)
+        # 遍历 model_subdir 下的所有子文件夹
+        for inner_dir in os.listdir(model_subdir):
+            inner_path = os.path.join(model_subdir, inner_dir)
+            if not os.path.isdir(inner_path):
+                continue
 
-    # 保存结果
-    correlation_array = np.array(correlation_list)
-    if output_path.endswith(".npy"):
-        np.save(output_path, correlation_array)
-    elif output_path.endswith(".csv"):
-        np.savetxt(output_path, correlation_array, delimiter=",")
-    else:
-        raise ValueError("output_path 必须以 .npy 或 .csv 结尾")
-    print(f"\n所有相关系数已保存至: {output_path}")
+            model_file = None
+            for fname in os.listdir(inner_path):
+                if type == "ob" and "combine_combine" in fname and "remove" in fname:
+                    model_file = os.path.join(inner_path, fname)
+                    break
+                elif type == "cp" and "combine_reverse" in fname and "remove" in fname:
+                    model_file = os.path.join(inner_path, fname)
+                    break
+
+            if model_file:
+                human_file = None
+                for fname in os.listdir(human_subdir):
+                    if type == "ob" and f"_{subdir}_remove" in fname:
+                        human_file = os.path.join(human_subdir, fname)
+                        break
+                    elif type == "cp" and "reverse_remove" in fname:
+                        human_file = os.path.join(human_subdir, fname)
+                        break
+
+                if human_file:
+                    corr = compare_behavior(model_file, human_file, corr_func)
+                    results.append((subdir, inner_dir, corr))
+                    print(f"[{subdir}/{inner_dir}] 相关系数: {corr:.4f}")
+                else:
+                    print(f"[{subdir}/{inner_dir}] 缺少 human 文件")
+            else:
+                print(f"[{subdir}/{inner_dir}] 缺少 model 文件")
+    return results
+
+
+# def batch_compare_behavior(model_folder,
+#                            human_folder,
+#                            output_path,
+#                            corr_func=pearsonr,
+#                            type='ob'):
+#     """
+#     批量比较多个模型和人类行为文件的相关性，并保存结果。
+#
+#     参数：
+#         model_folder (str): 模型行为数据的文件夹路径
+#         human_folder (str): 人类行为数据的文件夹路径
+#         output_path (str): 保存相关系数数组的路径（.npy 或 .csv）
+#         corr_func (function): 相关函数，默认为 pearsonr
+#         type (str): 'ob' 或 'cp'，决定读取哪种人类行为文件
+#     """
+#     correlation_list = []
+#
+#     # 遍历所有数字命名的子文件夹
+#     for subfolder in sorted(os.listdir(model_folder)):
+#         if not subfolder.isdigit():
+#             continue
+#
+#         model_subdir = os.path.join(model_folder, subfolder)
+#         human_subdir = os.path.join(human_folder, subfolder)
+#
+#         # 模型文件：子文件夹中包含 'remove' 的文件
+#         model_files = [f for f in os.listdir(model_subdir) if "remove" in f and f.endswith(".csv")]
+#         if not model_files:
+#             print(f"没有找到模型文件：{model_subdir}")
+#             continue
+#         model_csv = os.path.join(model_subdir, model_files[0])
+#
+#         # 人类文件名根据 type 变化
+#         if type == 'cp':
+#             human_filename = f"combine_{subfolder}_reverse_remove.csv"
+#         else:  # 默认 'ob'
+#             human_filename = f"combine_{subfolder}_remove.csv"
+#
+#         human_csv = os.path.join(human_subdir, human_filename)
+#         if not os.path.exists(human_csv):
+#             print(f"没有找到人类行为文件：{human_csv}")
+#             continue
+#
+#         # 调用 compare_behavior
+#         try:
+#             corr = compare_behavior(model_csv,
+#                                     human_csv,
+#                                     corr_func=corr_func)
+#             correlation_list.append(corr)
+#             print(f"{subfolder} -> 相关系数: {corr:.4f}")
+#         except Exception as e:
+#             print(f"处理 {subfolder} 时出错: {e}")
+#             correlation_list.append(np.nan)
+#
+#     # 保存结果
+#     correlation_array = np.array(correlation_list)
+#     if output_path.endswith(".npy"):
+#         np.save(output_path, correlation_array)
+#     elif output_path.endswith(".csv"):
+#         np.savetxt(output_path, correlation_array, delimiter=",")
+#     else:
+#         raise ValueError("output_path 必须以 .npy 或 .csv 结尾")
+#     print(f"\n所有相关系数已保存至: {output_path}")
 
 
 def sliding_correlation_analysis_permutation_v2(path_a,
@@ -2137,26 +2282,31 @@ def sliding_correlation_analysis_permutation_v2(path_a,
     return r_obs, p_value, perm_rs
 
 
-def get_human_similarity_matrix(model_list=["rnn"],
-                                hidden_state_list=[4, 8, 16, 32, 100, 200, 300],
-                                num_layers_list=[1],
-                                num_save_path="../results/numpy/eeg_model/human_similarity",
-                                model_behave_path="../results/csv/sub/hc",
-                                model_path="../models/240_rule",
-                                model_hidden_path="../hidden/sub/hc",
-                                sub_behave_path="../data/sub/hc",
-                                source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs",
-                                type="ob",
-                                ):
-    to_process = []  # 存储需要处理的组合
+def create_model_behave_hidden(model_list,
+                               hidden_state_list,
+                               num_layers_list,
+                               target_dir,
+                               model_path,
+                               sub_behave_path,
+                               behave_dir,
+                               model_hidden_path,
+                               source_npy_folder,
+                               type, ):
+    """
+    遍历所有模型和参数，如果不存在数据，则训练并得到行为和隐藏层数据
 
-    # 构造路径前缀
-    target_dir = os.path.join(num_save_path, type)
-    os.makedirs(target_dir, exist_ok=True)  # 如果目录不存在则创建
-
-    # 构造行为数据目录路径
-    behave_dir = os.path.join(model_behave_path, type)
-
+    :param type: 当前类型
+    :param model_list: 模型列表
+    :param hidden_state_list: 隐藏层列表
+    :param num_layers_list: 层数列表
+    :param target_dir: 人类相似度保存地址
+    :param model_path: 模型h5保存地址
+    :param sub_behave_path: 人类行为保存地址
+    :param behave_dir: 模型行为保存地址
+    :param model_hidden_path: 模型隐藏层保存地址
+    :param source_npy_folder: remove文件保存地址
+    :return:
+    """
     # 遍历所有模型、隐藏层、层数组合
     for model in model_list:
         for hs in hidden_state_list:
@@ -2209,6 +2359,192 @@ def get_human_similarity_matrix(model_list=["rnn"],
                                        key=remove_rows_key)
 
 
+def combine_behave_eeg(behave_similarity,
+                       time_range=(0, 750),
+                       eeg_folder="../results/numpy/eeg_model/correlation/hc/ob", ):
+    """
+    将行为相似度和eeg相似度结合
+
+    :param behave_similarity:
+    :param eeg_folder:
+    :return:
+    """
+
+    """
+    处理行为数据 
+    """
+    # 用 defaultdict 存储每个模型的值
+    model_scores = defaultdict(list)
+
+    # 分组汇总
+    for _, model_name, score in behave_similarity:
+        model_scores[model_name].append(score)
+
+    # 计算每个模型的平均值
+    model_avg = [(model_name, np.mean(scores)) for model_name, scores in model_scores.items()]
+
+    # 排序（可选）
+    model_avg.sort(key=lambda x: x[0])
+
+    # 输出成数组形式
+    behave_result_array = np.array(model_avg, dtype=object)
+
+    """
+    处理eeg数据
+    """
+    model_to_eeg = {}
+
+    for fname in os.listdir(eeg_folder):
+        if not fname.endswith(".npy"):
+            continue
+
+        file_path = os.path.join(eeg_folder, fname)
+
+        for model_name in model_scores.keys():
+            if model_name in fname:
+                eeg_data = np.load(file_path)  # shape: (subjects, time)
+                t_start, t_end = time_range
+
+                if eeg_data.ndim != 2:
+                    print(f"跳过形状不对的文件: {fname}")
+                    continue
+
+                eeg_slice = eeg_data[:, t_start:t_end]
+                eeg_mean = np.mean(eeg_slice)
+                model_to_eeg[model_name] = eeg_mean
+
+    """
+    合并
+    """
+    final_results = []
+    for model_name, behave_score in behave_result_array:
+        eeg_score = model_to_eeg.get(model_name, np.nan)  # 若无对应 EEG 文件，则为 NaN
+        final_results.append([model_name, behave_score, eeg_score])
+
+    final_results_array = np.array(final_results, dtype=object)
+
+    print("\n最终结果（行为 + EEG 相似度）:")
+    for row in final_results_array:
+        print(row)
+
+    return final_results_array
+
+
+def draw_human_similarity_final_results_array(final_results_array,
+                                              png_save_path="../results/png/eeg_model/human_similarity/hc/ob"):
+    """
+    画出二维人类相似度散点图（EEG 相似度 vs 行为相似度）
+
+    :param final_results_array: numpy array，形如 [['model_name', 行为相似度, EEG相似度], ...]
+    :param png_save_path: 保存图片的文件夹路径，文件名强制为 human_similarity_timerange_0_750.png
+    """
+    # 提取行为和EEG相似度
+    behave_sim = np.array([row[1] for row in final_results_array], dtype=float)
+    eeg_sim = np.array([row[2] for row in final_results_array], dtype=float)
+
+    # 替换 NaN 为 0
+    behave_sim = np.nan_to_num(behave_sim, nan=0.0)
+    eeg_sim = np.nan_to_num(eeg_sim, nan=0.0)
+
+    # 创建画布
+    plt.figure(figsize=(8, 6))
+
+    # 设置文本偏移距离
+    dx, dy = -0.0005, -0.0005
+
+    # 绘制散点图和标签
+    for i, row in enumerate(final_results_array):
+        model_name = row[0]
+        label = model_name.split("hidden_")[-1]  # 只取 hidden_ 后面的数字
+        x, y = eeg_sim[i], behave_sim[i]
+        plt.scatter(x, y, color='blue')
+        plt.text(x + dx, y + dy, label, fontsize=8, ha='left', va='bottom')
+
+    plt.xlabel("EEG similarity")
+    plt.ylabel("Behavioral similarity")
+    plt.title("Human Similarity")
+
+    # 强制设定保存文件名
+    save_path = os.path.join(png_save_path, "human_similarity.png")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    # 保存图像
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+
+def get_human_similarity_matrix(model_list=["rnn"],
+                                hidden_state_list=[4, 8, 16, 32, 100, 200, 300],
+                                num_layers_list=[1],
+                                num_save_path="../results/numpy/eeg_model/human_similarity",
+                                model_behave_path="../results/csv/sub/hc",
+                                model_path="../models/240_rule",
+                                model_hidden_path="../hidden/sub/hc",
+                                sub_behave_path="../data/sub/hc",
+                                source_npy_folder="../data/eeg/hc/2base_-1_0.5_baseline(6)_0_0.2/autoreject/bad_epochs",
+                                eeg_rsa_path="../results/numpy/eeg_model/correlation/hc/",
+                                human_similarity_png_save_path="../results/png/eeg_model/human_similarity/hc",
+                                type="ob",
+                                behave_corr_func=pearsonr,
+                                time_range=(0, 750),
+                                ):
+    """
+    计算所给模型和参数列表的人类相似度，并画成图像
+
+    :param time_range:
+    :param eps:
+    :param eeg_rsa_path:
+    :param human_similarity_png_save_path:
+    :param behave_corr_func: 计算行为相似性的方法
+    :param model_list: 模型列表
+    :param hidden_state_list: 隐藏层列表
+    :param num_layers_list: 层数列表
+    :param num_save_path: 人类相似度保存列表
+    :param model_behave_path: 模型行为列表
+    :param model_path: 模型h5保存路径
+    :param model_hidden_path: 模型隐藏层保存路径
+    :param sub_behave_path: 人类行为保存路径
+    :param source_npy_folder: remove文件保存路径
+    :param type: 类型
+    :return:
+    """
+    to_process = []  # 存储需要处理的组合
+
+    # 构造路径前缀
+    target_dir = os.path.join(num_save_path, type)
+    os.makedirs(target_dir, exist_ok=True)  # 如果目录不存在则创建
+
+    # 构造行为数据目录路径
+    behave_dir = os.path.join(model_behave_path, type)
+
+    model_behave_folder = os.path.join(model_behave_path, type)
+    human_behave_folder = os.path.join(sub_behave_path, type)
+    eeg_rsa_folder = os.path.join(eeg_rsa_path, type)
+    human_similarity_png_save_folder = os.path.join(human_similarity_png_save_path, type)
+
+    # 遍历所有模型和参数，如果不存在数据，则训练并得到行为和隐藏层数据
+    create_model_behave_hidden(model_list=model_list,
+                               hidden_state_list=hidden_state_list,
+                               num_layers_list=num_layers_list,
+                               target_dir=target_dir,
+                               model_path=model_path,
+                               sub_behave_path=sub_behave_path,
+                               behave_dir=behave_dir,
+                               model_hidden_path=model_hidden_path,
+                               source_npy_folder=source_npy_folder,
+                               type=type, )
+    behave_similarity = batch_compare_behavior(model_folder=model_behave_folder,
+                                               human_folder=human_behave_folder,
+                                               corr_func=behave_corr_func,
+                                               type=type, )
+    final_results_array = combine_behave_eeg(behave_similarity,
+                                             eeg_folder=eeg_rsa_folder,
+                                             time_range=time_range, )
+    draw_human_similarity_final_results_array(final_results_array=final_results_array,
+                                              png_save_path=human_similarity_png_save_folder,)
+
+
 if __name__ == "__main__":
     """
     计算eeg rdm
@@ -2248,17 +2584,17 @@ if __name__ == "__main__":
     #                                         is_every=1,
     #                                         rsa_save_path="../results/numpy/eeg_model/correlation/OB_first_rsa_result.npy")
     # batch_compute_eeg_model_rdm_correlation_remove(
-    #     eeg_rdm_folder="../results/numpy/eeg_rdm/yuanwen/",
+    #     eeg_rdm_folder="../results/numpy/eeg_rdm/hc/2base_-1_0.5_baseline(6)_0_0.2_remove/all_time_problem/ob",
     #     epoch_data_path=None,
-    #     model_rdm_folder="../results/numpy/model/sub/yuanwen/",
-    #     time_range=(0, 750),
+    #     model_rdm_folder="../results/numpy/model/sub/hc/",
+    #     time_range=(100, 850),
     #     time_min=-1,
     #     time_max=0.5,
     #     is_every=1,
     #     re_threshold=2,
-    #     rsa_save_path="../results/numpy/eeg_model/correlation/yuanwen/rsa_results_by_channel_unknow_OB_first_0.08.npy",
-    #     png_save_path="../results/png/eeg_model/correlation/yuanwen/rsa_results_unknow_OB_first_comtap_0.08.npy",
-    #     type="channel",
+    #     rsa_save_path="../results/numpy/eeg_model/correlation/hc/ob",
+    #     png_save_path="../results/png/eeg_model/correlation/hc/ob",
+    #     type="time",
     #     one_time=527,
     #     montage_type=64,
     #     model_type="combine",)
@@ -2353,4 +2689,5 @@ if __name__ == "__main__":
     """
     从两个维度计算人类相似度
     """
-    get_human_similarity_matrix()
+    get_human_similarity_matrix(hidden_state_list=[1, 2, 4, 8, 16, 32, 100, 200, 300],
+                                time_range=(400, 500),)
